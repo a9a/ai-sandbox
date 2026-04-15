@@ -12,7 +12,7 @@
   "enabledManagers": [
     "dockerfile",
     "docker-compose",
-    "regex"
+    "custom.regex"
   ],
   "packageRules": [
     {

@@ -5,6 +5,7 @@ Minimal, deterministic Docker sandbox for an AI agent CLI with controlled egress
 ## Files
 
 - `Dockerfile` - base image, system packages, pinned agent install, non-root user.
+- `FUTURE_IMPROVEMENTS.md` - backlog of planned hardening/maintenance work.
 - `.env` - single place for version/tag changes.
 - `build.sh` - builds image using values from `.env`.
 - `docker-compose.yml` - runs `agent` + `proxy` with network isolation.
