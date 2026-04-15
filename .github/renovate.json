@@ -1,0 +1,82 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:pinDigests"
+  ],
+  "timezone": "Europe/Warsaw",
+  "labels": [
+    "dependencies",
+    "renovate"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "docker-compose",
+    "regex"
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "groupName": "daily docker digests",
+      "schedule": [
+        "before 05:00 every weekday"
+      ]
+    },
+    {
+      "matchDatasources": [
+        "docker",
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "replacement"
+      ],
+      "groupName": "weekly dependency updates",
+      "schedule": [
+        "before 05:00 on monday"
+      ]
+    },
+    {
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "separateMajorMinor": true,
+      "schedule": [
+        "before 05:00 on monday"
+      ]
+    }
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": [
+        "(^|/)\\.env$",
+        "(^|/)Dockerfile$"
+      ],
+      "matchStrings": [
+        "NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+        "ARG NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "fileMatch": [
+        "(^|/)\\.env$",
+        "(^|/)Dockerfile$"
+      ],
+      "matchStrings": [
+        "CLAUDE_CODE_VERSION=(?<currentValue>[^\\s]+)",
+        "ARG CLAUDE_CODE_VERSION=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "@anthropic-ai/claude-code",
+      "datasourceTemplate": "npm"
+    }
+  ]
+}

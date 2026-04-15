@@ -1,0 +1,26 @@
+services:
+  proxy:
+    volumes:
+      - ./.ci/allowed-domains.test.txt:/etc/squid/allowed-domains.txt:ro
+
+  tester:
+    image: curlimages/curl:8.8.0
+    command: ["sleep", "infinity"]
+    depends_on:
+      - proxy
+      - mock-upstream
+      - blocked-upstream
+    networks:
+      - agent_net
+
+  mock-upstream:
+    image: hashicorp/http-echo:1.0.0
+    command: ["-listen=:80", "-text=ok-allowed"]
+    networks:
+      - agent_net
+
+  blocked-upstream:
+    image: hashicorp/http-echo:1.0.0
+    command: ["-listen=:80", "-text=blocked-should-not-pass"]
+    networks:
+      - agent_net

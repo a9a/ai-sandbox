@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare local secret file for tests
+        run: |
+          mkdir -p secrets
+          printf "dummy-key-for-ci\n" > secrets/anthropic_api_key.txt
+          chmod 600 secrets/anthropic_api_key.txt
+
+      - name: Install shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Bash syntax check
+        run: |
+          bash -n build.sh
+          bash -n scripts/*.sh
+
+      - name: Shellcheck
+        run: shellcheck -e SC1091 build.sh scripts/*.sh
+
+      - name: Validate compose config
+        run: docker compose config >/dev/null
+
+      - name: Build images
+        run: |
+          docker build -t ai-agent-sandbox:ci .
+          docker compose build proxy
+
+      - name: Integration tests (proxy + secrets)
+        run: ./scripts/test-integration.sh

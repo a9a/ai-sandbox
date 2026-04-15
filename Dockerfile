@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG NODE_IMAGE=node:20-slim@sha256:87ef9545464152504958f33887010424a106f0f29c4202353e6b206981f3d81b
+ARG NODE_IMAGE=node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55
 FROM ${NODE_IMAGE}
 
 # Pinned version of the agent to ensure build stability
@@ -20,8 +20,11 @@ RUN usermod -l devops node && \
     groupmod -n devops node && \
     usermod -d /home/devops -m devops
 
+COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/agent-entrypoint.sh
+
 USER devops
 WORKDIR /home/devops/project
 
 # Default entrypoint
-ENTRYPOINT ["claude"]
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint.sh"]
