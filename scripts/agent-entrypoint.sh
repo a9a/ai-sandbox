@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
+exit
 KEY_FILE="${ANTHROPIC_API_KEY_FILE:-/run/secrets/anthropic_api_key}"
 
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -e "$KEY_FILE" ]]; then
