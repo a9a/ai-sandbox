@@ -24,7 +24,7 @@
       ],
       "groupName": "daily docker digests",
       "schedule": [
-        "before 05:00 every weekday"
+        "before 5am every weekday"
       ]
     },
     {
@@ -40,7 +40,7 @@
       ],
       "groupName": "weekly dependency updates",
       "schedule": [
-        "before 05:00 on monday"
+        "before 5am on monday"
       ]
     },
     {
@@ -49,15 +49,16 @@
       ],
       "separateMajorMinor": true,
       "schedule": [
-        "before 05:00 on monday"
+        "before 5am on monday"
       ]
     }
   ],
-  "regexManagers": [
+  "customManagers": [
     {
-      "fileMatch": [
-        "(^|/)\\.env$",
-        "(^|/)Dockerfile$"
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.env$/",
+        "/(^|/)Dockerfile$/"
       ],
       "matchStrings": [
         "NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
@@ -67,9 +68,10 @@
       "versioningTemplate": "docker"
     },
     {
-      "fileMatch": [
-        "(^|/)\\.env$",
-        "(^|/)Dockerfile$"
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.env$/",
+        "/(^|/)Dockerfile$/"
       ],
       "matchStrings": [
         "CLAUDE_CODE_VERSION=(?<currentValue>[^\\s]+)",
