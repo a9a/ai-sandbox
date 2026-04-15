@@ -61,7 +61,7 @@ fi
 
 compose build agent
 
-compose run --rm agent sh -lc '[ -f /run/secrets/anthropic_api_key ] && [ -n "${ANTHROPIC_API_KEY:-}" ]'
+compose run --rm agent sh -lc "test -f /run/secrets/anthropic_api_key && test -n \"\${ANTHROPIC_API_KEY:-}\""
 
 agent_cid="$(compose run -d --name ai-sandbox-agent-inspect agent sleep 120)"
 if docker inspect "$agent_cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q '^ANTHROPIC_API_KEY='; then
