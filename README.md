@@ -8,7 +8,7 @@ Minimal, deterministic Docker sandbox for an AI agent CLI with controlled egress
 - `.env` - single place for version/tag changes.
 - `build.sh` - builds image using values from `.env`.
 - `docker-compose.yml` - runs `agent` + `proxy` with network isolation.
-- `scripts/agent-entrypoint.sh` - loads `ANTHROPIC_API_KEY` from `/run/secrets/anthropic_api_key`.
+- `scripts/agent-entrypoint.sh` - loads `ANTHROPIC_API_KEY` from `/run/secrets/anthropic_api_key` and drops privileges to `devops`.
 - `proxy/squid.conf` - proxy policy (allow only listed destination domains).
 - `proxy/allowed-domains.txt` - destination domain allowlist.
 - `secrets/anthropic_api_key.txt.example` - template for local secret file.
@@ -52,6 +52,7 @@ chmod 600 secrets/anthropic_api_key.txt
 ```
 
 Then replace file content with your real key.
+`chmod 600` is supported with this setup.
 
 ## Run (Direct Docker)
 

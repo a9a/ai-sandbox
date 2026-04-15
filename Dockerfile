@@ -8,6 +8,7 @@ ARG CLAUDE_CODE_VERSION=0.2.9
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
+    gosu \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,7 +24,6 @@ RUN usermod -l devops node && \
 COPY scripts/agent-entrypoint.sh /usr/local/bin/agent-entrypoint.sh
 RUN chmod +x /usr/local/bin/agent-entrypoint.sh
 
-USER devops
 WORKDIR /home/devops/project
 
 # Default entrypoint
