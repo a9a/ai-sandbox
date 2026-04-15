@@ -3,7 +3,7 @@ ARG NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f
 FROM ${NODE_IMAGE}
 
 # Pinned version of the agent to ensure build stability
-ARG CLAUDE_CODE_VERSION=0.2.126
+ARG CLAUDE_CODE_VERSION=2.1.109
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
