@@ -6,6 +6,7 @@ Minimal, deterministic Docker sandbox for an AI agent CLI with controlled egress
 
 - `Dockerfile` - base image, system packages, pinned agent install, non-root user.
 - `FUTURE_IMPROVEMENTS.md` - backlog of planned hardening/maintenance work.
+- `Makefile` - convenience commands for compose, firewall, and tests.
 - `.env` - single place for version/tag changes.
 - `build.sh` - builds image using values from `.env`.
 - `docker-compose.yml` - runs `agent` + `proxy` with network isolation.
@@ -32,6 +33,20 @@ IMAGE_NAME=ai-agent-sandbox:local
 ./build.sh
 ```
 
+## Make Targets
+
+```bash
+make help
+```
+
+Most common:
+
+```bash
+make up-secure
+make shell
+make down-secure
+```
+
 ## Local Tests
 
 Run integration tests for:
@@ -40,7 +55,7 @@ Run integration tests for:
 - Docker Secrets mounting and runtime key loading.
 
 ```bash
-./scripts/test-integration.sh
+make test
 ```
 
 ## Configure API Secret
@@ -73,25 +88,25 @@ If you changed `IMAGE_NAME`, use that value instead of `ai-agent-sandbox:local`.
 Build and start services:
 
 ```bash
-docker compose up -d --build
+make up
 ```
 
 Apply hard host firewall policy (`agent` can only connect to `proxy:3128`):
 
 ```bash
-./scripts/apply-egress-firewall.sh
+make firewall-apply
 ```
 
 Run an interactive agent shell:
 
 ```bash
-docker compose run --rm agent
+make shell
 ```
 
 Stop services:
 
 ```bash
-docker compose down
+make down
 ```
 
 ## Configure Proxy Allowlist (Domain ACL)
@@ -125,13 +140,13 @@ Notes:
 Apply `iptables` policy so agent traffic is allowed only to the proxy on port `3128`:
 
 ```bash
-./scripts/apply-egress-firewall.sh
+make firewall-apply
 ```
 
 Remove policy:
 
 ```bash
-./scripts/remove-egress-firewall.sh
+make firewall-remove
 ```
 
 The scripts use `sudo`, require running containers (`ai-sandbox-agent`, `ai-sandbox-proxy`) to resolve current container IPs, and currently target Linux hosts with `iptables`.
