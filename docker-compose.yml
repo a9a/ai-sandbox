@@ -1,0 +1,40 @@
+services:
+  proxy:
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    container_name: ai-sandbox-proxy
+    networks:
+      - agent_net
+      - egress_net
+    restart: unless-stopped
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:20-slim@sha256:87ef9545464152504958f33887010424a106f0f29c4202353e6b206981f3d81b}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-0.2.9}
+    image: ${IMAGE_NAME:-ai-agent-sandbox:local}
+    container_name: ai-sandbox-agent
+    depends_on:
+      - proxy
+    networks:
+      - agent_net
+    environment:
+      HTTP_PROXY: http://proxy:3128
+      HTTPS_PROXY: http://proxy:3128
+      NO_PROXY: localhost,127.0.0.1,proxy
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./:/home/devops/project
+    stdin_open: true
+    tty: true
+
+networks:
+  # Internal network: agent can talk to proxy but has no direct internet egress.
+  agent_net:
+    internal: true
+  # External network used only by the proxy for internet egress.
+  egress_net: {}

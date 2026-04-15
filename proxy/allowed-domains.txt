@@ -1,0 +1,4 @@
+# One domain per line. Subdomains are matched automatically by dstdomain.
+
+api.anthropic.com
+console.anthropic.com
