@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+exit
 set -euo pipefail
 
 KEY_FILE="${ANTHROPIC_API_KEY_FILE:-/run/secrets/anthropic_api_key}"
