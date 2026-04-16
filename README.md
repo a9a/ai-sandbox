@@ -7,8 +7,10 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 - `docker-compose.yml` - shared base stack (proxy + networks).
 - `docker-compose.claude.yml` - Claude agent service.
 - `docker-compose.codex.yml` - Codex agent service.
+- `docker-compose.codex.docker.yml` - Codex profile with sidecar Docker daemon.
 - `Dockerfile.claude` - Claude agent image.
 - `Dockerfile.codex` - Codex agent image.
+- `Dockerfile.codex.docker` - Codex agent image with Docker CLI only.
 - `Makefile` - convenience commands for compose, firewall, and tests.
 - `.env` - pinned versions and image tags.
 - `proxy/squid.conf` - proxy policy (domain allowlist).
@@ -31,6 +33,8 @@ CLAUDE_CODE_VERSION=2.1.109
 CODEX_VERSION=0.121.0
 CLAUDE_IMAGE_NAME=ai-sandbox-claude-agent:local
 CODEX_IMAGE_NAME=ai-sandbox-codex-agent:local
+CODEX_DOCKER_IMAGE_NAME=ai-sandbox-codex-agent-docker:local
+DOCKER_CLI_IMAGE=docker:27-cli
 ```
 
 ## Configure Secrets
@@ -82,6 +86,18 @@ make codex-up-secure
 make codex-down-secure
 ```
 
+Codex with Docker-in-Docker sidecar:
+
+```bash
+make codex-docker-up
+make codex-docker-shell
+make codex-docker-new
+make codex-docker-up-secure
+make codex-docker-down-secure
+```
+
+This profile uses a rootless Docker daemon sidecar (`docker:dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
+
 Backward-compatible aliases (`up`, `shell`, `down-secure`) default to Claude.
 
 Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mount.
@@ -109,6 +125,9 @@ platform.claude.com
 api.openai.com
 auth.openai.com
 chatgpt.com
+auth.docker.io
+registry-1.docker.io
+production.cloudflare.docker.com
 ```
 
 After changes:
@@ -123,12 +142,14 @@ docker compose -f docker-compose.yml up -d --build proxy
 - Proxy is attached to both `agent_net` and `egress_net`.
 - Squid denies `CONNECT` to literal IP targets.
 - Use host firewall for hard enforcement (`agent -> proxy:3128` only).
+- In `codex-docker-*-secure` mode no extra network exception is needed for Docker (Unix socket is used).
 
 Apply/remove host firewall:
 
 ```bash
 make firewall-apply-claude
 make firewall-apply-codex
+make firewall-apply-codex-docker
 make firewall-remove
 ```
 

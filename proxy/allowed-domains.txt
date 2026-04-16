@@ -6,3 +6,6 @@ platform.claude.com
 api.openai.com
 auth.openai.com
 chatgpt.com
+auth.docker.io
+registry-1.docker.io
+production.cloudflare.docker.com

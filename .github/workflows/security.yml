@@ -30,6 +30,11 @@ jobs:
             --build-arg CODEX_NODE_IMAGE="$CODEX_NODE_IMAGE" \
             --build-arg CODEX_VERSION="$CODEX_VERSION" \
             -t ai-sandbox-codex-agent:security .
+          docker build -f Dockerfile.codex.docker \
+            --build-arg CODEX_NODE_IMAGE="$CODEX_NODE_IMAGE" \
+            --build-arg CODEX_VERSION="$CODEX_VERSION" \
+            --build-arg DOCKER_CLI_IMAGE="$DOCKER_CLI_IMAGE" \
+            -t ai-sandbox-codex-agent-docker:security .
           docker build -t ai-sandbox-proxy:security ./proxy
 
       - name: Trivy filesystem scan
@@ -67,6 +72,16 @@ jobs:
         with:
           scan-type: image
           image-ref: ai-sandbox-proxy:security
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy Codex Docker image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: ai-sandbox-codex-agent-docker:security
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
