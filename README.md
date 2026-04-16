@@ -55,6 +55,8 @@ export ANTHROPIC_API_KEY="$(tr -d '\r\n' < secrets/anthropic_api_key.txt)"
 export OPENAI_API_KEY="$(tr -d '\r\n' < secrets/openai_api_key.txt)"
 ```
 
+Then replace file contents with real keys.
+
 ## Make Targets
 
 Show all targets:
@@ -98,6 +100,9 @@ make codex-build
 
 ## Proxy Allowlist (Domain ACL)
 
+Edit `proxy/allowed-domains.txt` (one domain per line).
+
+Current baseline:
 Edit `proxy/allowed-domains.txt` (one domain per line).
 
 Current baseline:
