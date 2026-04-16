@@ -23,9 +23,12 @@ services:
         target: openai_api_key
     volumes:
       - ./:/home/devops/project
+      - type: bind
+        source: ${CODEX_HOME_PATH:-${PWD}/.codex}
+        target: /home/devops/.codex
     stdin_open: true
     tty: true
 
 secrets:
   openai_api_key:
-    file: ./secrets/openai_api_key.txt
+    environment: OPENAI_API_KEY

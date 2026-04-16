@@ -5,17 +5,21 @@ COMPOSE_ALL := $(COMPOSE_BASE) -f docker-compose.claude.yml -f docker-compose.co
 
 .PHONY: help \
 	up down up-secure down-secure shell logs build test \
-	claude-build codex-build claude-up claude-down claude-up-secure claude-down-secure claude-shell claude-logs \
-	codex-up codex-down codex-up-secure codex-down-secure codex-shell codex-logs \
+	claude-build codex-build claude-up claude-down claude-up-secure claude-down-secure claude-shell claude-new claude-logs \
+	codex-up codex-down codex-up-secure codex-down-secure codex-shell codex-new codex-logs \
 	test-claude test-codex firewall-apply firewall-remove firewall-apply-claude firewall-apply-codex down-all
 
 help:
 	@echo "Available targets:"
 	@echo "  make claude-up-secure   - Start Claude stack and apply host firewall policy"
-	@echo "  make claude-shell       - Open Claude agent shell"
+	@echo "  make claude-shell       - Attach to running Claude agent (exec claude)"
+	@echo "  make claude-new         - Run a new one-off Claude instance (--rm)"
 	@echo "  make claude-down-secure - Remove firewall policy and stop Claude stack"
+	@echo "  make codex-up           - Build and start Codex stack (proxy + agent)"
+	@echo "  make codex-shell        - Attach to running Codex agent (exec codex)"
+	@echo "  make codex-new          - Run a new one-off Codex instance (--rm)"
+	@echo "                           Optional: CODEX_HOME_PATH=/path make codex-new"
 	@echo "  make codex-up-secure    - Start Codex stack and apply host firewall policy"
-	@echo "  make codex-shell        - Open Codex agent shell"
 	@echo "  make codex-down-secure  - Remove firewall policy and stop Codex stack"
 	@echo "  make test               - Run integration tests for Claude and Codex"
 	@echo "  make down-all           - Stop both Claude and Codex stacks"
@@ -56,7 +60,10 @@ claude-down-secure:
 	$(COMPOSE_CLAUDE) down
 
 claude-shell:
-	$(COMPOSE_CLAUDE) run --rm claude-agent
+	$(COMPOSE_CLAUDE) exec --user devops -e HOME=/home/devops claude-agent claude
+
+claude-new:
+	$(COMPOSE_CLAUDE) run --rm claude-agent claude
 
 claude-logs:
 	$(COMPOSE_CLAUDE) logs -f proxy claude-agent
@@ -74,7 +81,10 @@ codex-down-secure:
 	$(COMPOSE_CODEX) down
 
 codex-shell:
-	$(COMPOSE_CODEX) run --rm codex-agent
+	$(COMPOSE_CODEX) exec --user devops -e HOME=/home/devops codex-agent codex
+
+codex-new:
+	CODEX_HOME_PATH="$(CODEX_HOME_PATH)" $(COMPOSE_CODEX) run --rm codex-agent codex
 
 codex-logs:
 	$(COMPOSE_CODEX) logs -f proxy codex-agent

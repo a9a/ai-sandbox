@@ -13,7 +13,6 @@ case "$AGENT_KIND" in
     )
     AGENT_SERVICE="claude-agent"
     INSPECT_CONTAINER="ai-sandbox-claude-agent-inspect"
-    SECRET_HOST_FILE="$ROOT_DIR/secrets/anthropic_api_key.txt"
     SECRET_CONTAINER_FILE="/run/secrets/anthropic_api_key"
     SECRET_ENV_NAME="ANTHROPIC_API_KEY"
     ;;
@@ -25,7 +24,6 @@ case "$AGENT_KIND" in
     )
     AGENT_SERVICE="codex-agent"
     INSPECT_CONTAINER="ai-sandbox-codex-agent-inspect"
-    SECRET_HOST_FILE="$ROOT_DIR/secrets/openai_api_key.txt"
     SECRET_CONTAINER_FILE="/run/secrets/openai_api_key"
     SECRET_ENV_NAME="OPENAI_API_KEY"
     ;;
@@ -51,10 +49,8 @@ cleanup() {
 
 trap cleanup EXIT
 
-mkdir -p "$ROOT_DIR/secrets"
-if [[ ! -f "$SECRET_HOST_FILE" ]]; then
-  printf "dummy-key-for-ci\n" > "$SECRET_HOST_FILE"
-  chmod 600 "$SECRET_HOST_FILE"
+if [[ -z "${!SECRET_ENV_NAME:-}" ]]; then
+  export "$SECRET_ENV_NAME=dummy-key-for-ci"
 fi
 
 compose up -d --build proxy mock-upstream blocked-upstream tester
