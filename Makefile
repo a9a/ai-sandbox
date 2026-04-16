@@ -1,42 +1,111 @@
-COMPOSE := docker compose
+COMPOSE_BASE := docker compose -f docker-compose.yml
+COMPOSE_CLAUDE := $(COMPOSE_BASE) -f docker-compose.claude.yml
+COMPOSE_CODEX := $(COMPOSE_BASE) -f docker-compose.codex.yml
+COMPOSE_ALL := $(COMPOSE_BASE) -f docker-compose.claude.yml -f docker-compose.codex.yml
 
-.PHONY: help up down up-secure down-secure shell logs test firewall-apply firewall-remove
+.PHONY: help \
+	up down up-secure down-secure shell logs build test \
+	claude-build codex-build claude-up claude-down claude-up-secure claude-down-secure claude-shell claude-new claude-logs \
+	codex-up codex-down codex-up-secure codex-down-secure codex-shell codex-new codex-logs \
+	test-claude test-codex firewall-apply firewall-remove firewall-apply-claude firewall-apply-codex down-all
 
 help:
 	@echo "Available targets:"
-	@echo "  make up           - Build and start stack (proxy + agent)"
-	@echo "  make down         - Stop stack"
-	@echo "  make up-secure    - Start stack and apply host firewall policy"
-	@echo "  make down-secure  - Remove host firewall policy and stop stack"
-	@echo "  make shell        - Open agent shell"
-	@echo "  make logs         - Tail proxy/agent logs"
-	@echo "  make test         - Run integration tests"
-	@echo "  make firewall-apply   - Apply iptables policy (Linux)"
-	@echo "  make firewall-remove  - Remove iptables policy (Linux)"
+	@echo "  make claude-up-secure   - Start Claude stack and apply host firewall policy"
+	@echo "  make claude-shell       - Attach to running Claude agent (exec claude)"
+	@echo "  make claude-new         - Run a new one-off Claude instance (--rm)"
+	@echo "  make claude-down-secure - Remove firewall policy and stop Claude stack"
+	@echo "  make codex-up           - Build and start Codex stack (proxy + agent)"
+	@echo "  make codex-shell        - Attach to running Codex agent (exec codex)"
+	@echo "  make codex-new          - Run a new one-off Codex instance (--rm)"
+	@echo "                           Optional: CODEX_HOME_PATH=/path make codex-new"
+	@echo "  make codex-up-secure    - Start Codex stack and apply host firewall policy"
+	@echo "  make codex-down-secure  - Remove firewall policy and stop Codex stack"
+	@echo "  make test               - Run integration tests for Claude and Codex"
+	@echo "  make down-all           - Stop both Claude and Codex stacks"
 
-up:
-	$(COMPOSE) up -d --build
+# Backward-compatible aliases (Claude as default)
+up: claude-up
 
-down:
-	$(COMPOSE) down
+down: claude-down
 
-up-secure: up firewall-apply
+up-secure: claude-up-secure
 
-down-secure:
+down-secure: claude-down-secure
+
+shell: claude-shell
+
+logs: claude-logs
+
+build: claude-build
+
+test: test-claude test-codex
+
+claude-build:
+	./build.sh
+
+codex-build:
+	./build-codex.sh
+
+claude-up:
+	$(COMPOSE_CLAUDE) up -d --build
+
+claude-down:
+	$(COMPOSE_CLAUDE) down
+
+claude-up-secure: claude-up firewall-apply-claude
+
+claude-down-secure:
 	-$(MAKE) firewall-remove
-	$(COMPOSE) down
+	$(COMPOSE_CLAUDE) down
 
-shell:
-	$(COMPOSE) run --rm agent
+claude-shell:
+	$(COMPOSE_CLAUDE) exec --user devops -e HOME=/home/devops claude-agent claude
 
-logs:
-	$(COMPOSE) logs -f proxy agent
+claude-new:
+	$(COMPOSE_CLAUDE) run --rm claude-agent claude
 
-test:
-	./scripts/test-integration.sh
+claude-logs:
+	$(COMPOSE_CLAUDE) logs -f proxy claude-agent
 
-firewall-apply:
-	./scripts/apply-egress-firewall.sh
+codex-up:
+	$(COMPOSE_CODEX) up -d --build
+
+codex-down:
+	$(COMPOSE_CODEX) down
+
+codex-up-secure: codex-up firewall-apply-codex
+
+codex-down-secure:
+	-$(MAKE) firewall-remove
+	$(COMPOSE_CODEX) down
+
+codex-shell:
+	$(COMPOSE_CODEX) exec --user devops -e HOME=/home/devops codex-agent codex
+
+codex-new:
+	CODEX_HOME_PATH="$(CODEX_HOME_PATH)" $(COMPOSE_CODEX) run --rm codex-agent codex
+
+codex-logs:
+	$(COMPOSE_CODEX) logs -f proxy codex-agent
+
+firewall-apply: firewall-apply-claude
+
+firewall-apply-claude:
+	./scripts/apply-egress-firewall.sh ai-sandbox-claude-agent ai-sandbox-proxy
+
+firewall-apply-codex:
+	./scripts/apply-egress-firewall.sh ai-sandbox-codex-agent ai-sandbox-proxy
 
 firewall-remove:
 	./scripts/remove-egress-firewall.sh
+
+test-claude:
+	./scripts/test-integration.sh claude
+
+test-codex:
+	./scripts/test-integration.sh codex
+
+down-all:
+	-$(MAKE) firewall-remove
+	$(COMPOSE_ALL) down

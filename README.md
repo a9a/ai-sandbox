@@ -1,180 +1,184 @@
 # AI Agent Sandbox (Docker)
 
-Minimal, deterministic Docker sandbox for an AI agent CLI with controlled egress through a proxy container.
+Deterministic Docker sandbox for AI coding agents with controlled egress through a proxy container.
 
 ## Files
 
-- `Dockerfile` - base image, system packages, pinned agent install, non-root user.
-- `FUTURE_IMPROVEMENTS.md` - backlog of planned hardening/maintenance work.
+- `docker-compose.yml` - shared base stack (proxy + networks).
+- `docker-compose.claude.yml` - Claude agent service.
+- `docker-compose.codex.yml` - Codex agent service.
+- `Dockerfile.claude` - Claude agent image.
+- `Dockerfile.codex` - Codex agent image.
 - `Makefile` - convenience commands for compose, firewall, and tests.
-- `.env` - single place for version/tag changes.
-- `build.sh` - builds image using values from `.env`.
-- `docker-compose.yml` - runs `agent` + `proxy` with network isolation.
-- `scripts/agent-entrypoint.sh` - loads `ANTHROPIC_API_KEY` from `/run/secrets/anthropic_api_key` and drops privileges to `devops`.
-- `proxy/squid.conf` - proxy policy (allow only listed destination domains).
+- `.env` - pinned versions and image tags.
+- `proxy/squid.conf` - proxy policy (domain allowlist).
 - `proxy/allowed-domains.txt` - destination domain allowlist.
-- `secrets/anthropic_api_key.txt.example` - template for local secret file.
-- `scripts/apply-egress-firewall.sh` - required host firewall (`DOCKER-USER`) enforcement.
-- `scripts/remove-egress-firewall.sh` - removes the host firewall chain.
+- `scripts/claude-entrypoint.sh` - loads Anthropic secret and drops to `devops`.
+- `scripts/codex-entrypoint.sh` - loads OpenAI secret and drops to `devops`.
+- `scripts/apply-egress-firewall.sh` - host firewall policy (`DOCKER-USER`).
+- `scripts/remove-egress-firewall.sh` - removes host firewall policy.
+- `scripts/test-integration.sh` - integration tests (`claude` or `codex`).
+- `FUTURE_IMPROVEMENTS.md` - backlog of postponed improvements.
 
 ## Configure Versions
 
 Edit `.env`:
 
 ```env
-NODE_IMAGE=node:20-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55
-CLAUDE_CODE_VERSION=0.2.9
-IMAGE_NAME=ai-agent-sandbox:local
+CLAUDE_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
+CODEX_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
+CLAUDE_CODE_VERSION=2.1.109
+CODEX_VERSION=0.121.0
+CLAUDE_IMAGE_NAME=ai-sandbox-claude-agent:local
+CODEX_IMAGE_NAME=ai-sandbox-codex-agent:local
 ```
 
-## Build
+## Configure Secrets
+
+Both keys are optional.
+
+- If not set, containers still start, but authenticated API calls will fail.
+- If set, Compose mounts them as Docker secrets (`/run/secrets/...`) so they are not visible in `docker inspect` env.
+- `.env` already defines both as empty by default, so `docker compose up` does not fail when they are missing.
+
+Set keys from shell env:
 
 ```bash
-./build.sh
+export ANTHROPIC_API_KEY='...'
+export OPENAI_API_KEY='...'
+```
+
+Or load them from local files:
+
+```bash
+export ANTHROPIC_API_KEY="$(tr -d '\r\n' < secrets/anthropic_api_key.txt)"
+export OPENAI_API_KEY="$(tr -d '\r\n' < secrets/openai_api_key.txt)"
 ```
 
 ## Make Targets
+
+Show all targets:
 
 ```bash
 make help
 ```
 
-Most common:
+Most common (Claude):
 
 ```bash
-make up-secure
-make shell
-make down-secure
+make claude-up-secure
+make claude-shell
+make claude-new
+make claude-down-secure
 ```
+
+Most common (Codex):
+
+```bash
+make codex-up
+make codex-shell
+make codex-new
+make codex-up-secure
+make codex-down-secure
+```
+
+Backward-compatible aliases (`up`, `shell`, `down-secure`) default to Claude.
+
+Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mount.
+
+- Default path is `$PWD/.codex` (where `docker compose` is started).
+- Optional: set `CODEX_HOME_PATH` in `.env` (example: `/path/to/codex-home`) to override.
+
+## Build Images
+
+```bash
+make claude-build
+make codex-build
+```
+
+## Proxy Allowlist (Domain ACL)
+
+Edit `proxy/allowed-domains.txt` (one domain per line).
+
+Current baseline:
+
+```txt
+api.anthropic.com
+console.anthropic.com
+platform.claude.com
+api.openai.com
+auth.openai.com
+chatgpt.com
+```
+
+After changes:
+
+```bash
+docker compose -f docker-compose.yml up -d --build proxy
+```
+
+## Egress Model
+
+- Agents run on `agent_net` (`internal: true`) and cannot egress directly.
+- Proxy is attached to both `agent_net` and `egress_net`.
+- Squid denies `CONNECT` to literal IP targets.
+- Use host firewall for hard enforcement (`agent -> proxy:3128` only).
+
+Apply/remove host firewall:
+
+```bash
+make firewall-apply-claude
+make firewall-apply-codex
+make firewall-remove
+```
+
+Scripts require Linux host with `iptables` and running containers.
 
 ## Local Tests
 
-Run integration tests for:
-- proxy allowlist (`allowed` and `blocked` domain behavior),
-- literal IP blocking through proxy,
-- Docker Secrets mounting and runtime key loading.
+Run both integration suites:
 
 ```bash
 make test
 ```
 
-## Configure API Secret
-
-Create local secret file (not tracked by git):
+Or run one:
 
 ```bash
-cp secrets/anthropic_api_key.txt.example secrets/anthropic_api_key.txt
-chmod 600 secrets/anthropic_api_key.txt
+./scripts/test-integration.sh claude
+./scripts/test-integration.sh codex
 ```
 
-Then replace file content with your real key.
-`chmod 600` is supported with this setup.
+Covered checks:
 
-## Run (Direct Docker)
-
-Mount current project into container workspace:
-
-```bash
-docker run --rm -it \
-  -v "$PWD:/home/devops/project" \
-  -v "$PWD/secrets/anthropic_api_key.txt:/run/secrets/anthropic_api_key:ro" \
-  ai-agent-sandbox:local --version
-```
-
-If you changed `IMAGE_NAME`, use that value instead of `ai-agent-sandbox:local`.
-
-## Run With Proxy Egress Control
-
-Build and start services:
-
-```bash
-make up
-```
-
-Apply hard host firewall policy (`agent` can only connect to `proxy:3128`):
-
-```bash
-make firewall-apply
-```
-
-Run an interactive agent shell:
-
-```bash
-make shell
-```
-
-Stop services:
-
-```bash
-make down
-```
-
-## Configure Proxy Allowlist (Domain ACL)
-
-Edit `proxy/allowed-domains.txt` and keep one destination domain per line:
-
-Example:
-
-```txt
-api.anthropic.com
-console.anthropic.com
-```
-
-After changes, restart proxy:
-
-```bash
-docker compose up -d --build proxy
-```
-
-Notes:
-- `agent` is connected only to `agent_net` (`internal: true`) and cannot reach internet directly.
-- `proxy` is connected to both `agent_net` and `egress_net`, so internet egress happens only via proxy.
-- `proxy` has a healthcheck and `agent` waits for `service_healthy` before startup.
-- Domain ACL avoids brittle provider-wide IP ranges.
-- `docker compose` automatically reads variables from `.env` in the project root.
-- `docker compose` reads secret `./secrets/anthropic_api_key.txt` and mounts it to `/run/secrets/anthropic_api_key`.
-- Squid denies `CONNECT` to literal IP targets, reducing proxy-bypass attempts.
-
-## Host Firewall
-
-Apply `iptables` policy so agent traffic is allowed only to the proxy on port `3128`:
-
-```bash
-make firewall-apply
-```
-
-Remove policy:
-
-```bash
-make firewall-remove
-```
-
-The scripts use `sudo`, require running containers (`ai-sandbox-agent`, `ai-sandbox-proxy`) to resolve current container IPs, and currently target Linux hosts with `iptables`.
+- proxy allowlist behavior (`allowed`/`blocked` domains),
+- literal IP blocking via proxy,
+- secret file mounted and loaded into runtime env,
+- secret env var not present in `docker inspect` env list.
 
 ## GitHub Actions
 
-- `CI` workflow (`.github/workflows/ci.yml`)
+- `.github/workflows/ci.yml`
   - shell checks (`bash -n`, `shellcheck`),
   - compose validation,
-  - image builds,
-  - integration tests (`./scripts/test-integration.sh`).
-- `Security Scan` workflow (`.github/workflows/security.yml`)
-  - daily Trivy scan of repo and both images,
+  - build of proxy + Claude + Codex images,
+  - integration tests for both agents.
+- `.github/workflows/security.yml`
+  - daily Trivy scan of repo + proxy image + Claude image + Codex image,
   - fails on `HIGH`/`CRITICAL`.
 
 ## Renovate
 
-Configuration is in `.github/renovate.json`.
+Configuration: `.github/renovate.json`.
 
-Schedule:
-- daily on weekdays for Docker digest updates,
-- weekly on Monday for patch/minor updates,
-- weekly on Monday for major updates (separate PRs).
+Policy:
 
-To enable it, install the official Renovate GitHub App on this repository.
+- daily weekdays for Docker digest updates,
+- weekly Monday for patch/minor updates,
+- weekly Monday for major updates.
 
 ## Update Policy
 
-- Keep `NODE_IMAGE` pinned to a digest for deterministic builds.
-- Bump digest periodically for security patches.
-- Keep `CLAUDE_CODE_VERSION` pinned to a specific version for reproducibility.
+- Keep base images pinned by digest.
+- Keep CLI versions pinned.
+- Periodically refresh digests and rerun CI/security scans.

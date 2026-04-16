@@ -2,3 +2,7 @@
 
 api.anthropic.com
 console.anthropic.com
+platform.claude.com
+api.openai.com
+auth.openai.com
+chatgpt.com
