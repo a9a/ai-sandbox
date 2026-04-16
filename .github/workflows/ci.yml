@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   validate-and-test:
     runs-on: ubuntu-latest
@@ -14,13 +17,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Prepare local secret file for tests
+      - name: Prepare local secret files for tests
         run: |
           mkdir -p secrets
           printf "dummy-key-for-ci\n" > secrets/anthropic_api_key.txt
-          chmod 600 secrets/anthropic_api_key.txt
+          printf "dummy-key-for-ci\n" > secrets/openai_api_key.txt
+          chmod 600 secrets/anthropic_api_key.txt secrets/openai_api_key.txt
 
       - name: Install shellcheck
         run: |
@@ -30,18 +34,28 @@ jobs:
       - name: Bash syntax check
         run: |
           bash -n build.sh
+          bash -n build-codex.sh
           bash -n scripts/*.sh
 
       - name: Shellcheck
-        run: shellcheck -e SC1091 build.sh scripts/*.sh
+        run: shellcheck -e SC1091 build.sh build-codex.sh scripts/*.sh
 
       - name: Validate compose config
-        run: docker compose config >/dev/null
+        run: |
+          docker compose -f docker-compose.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.claude.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.codex.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.claude.yml -f .ci/docker-compose.test.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.codex.yml -f .ci/docker-compose.test.yml config >/dev/null
 
       - name: Build images
         run: |
-          docker build -t ai-agent-sandbox:ci .
-          docker compose build proxy
+          docker compose -f docker-compose.yml build proxy
+          docker compose -f docker-compose.yml -f docker-compose.claude.yml build claude-agent
+          docker compose -f docker-compose.yml -f docker-compose.codex.yml build codex-agent
 
-      - name: Integration tests (proxy + secrets)
-        run: ./scripts/test-integration.sh
+      - name: Integration tests (Claude)
+        run: ./scripts/test-integration.sh claude
+
+      - name: Integration tests (Codex)
+        run: ./scripts/test-integration.sh codex

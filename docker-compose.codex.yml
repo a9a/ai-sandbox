@@ -1,0 +1,31 @@
+services:
+  codex-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.codex
+      args:
+        CODEX_NODE_IMAGE: ${CODEX_NODE_IMAGE:-node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c}
+        CODEX_VERSION: ${CODEX_VERSION:-0.121.0}
+    image: ${CODEX_IMAGE_NAME:-ai-sandbox-codex-agent:local}
+    container_name: ai-sandbox-codex-agent
+    depends_on:
+      proxy:
+        condition: service_healthy
+    networks:
+      - agent_net
+    environment:
+      HTTP_PROXY: http://proxy:3128
+      HTTPS_PROXY: http://proxy:3128
+      NO_PROXY: localhost,127.0.0.1,proxy
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    secrets:
+      - source: openai_api_key
+        target: openai_api_key
+    volumes:
+      - ./:/home/devops/project
+    stdin_open: true
+    tty: true
+
+secrets:
+  openai_api_key:
+    file: ./secrets/openai_api_key.txt

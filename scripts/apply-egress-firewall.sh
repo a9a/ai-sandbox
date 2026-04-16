@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-AGENT_CONTAINER="${1:-ai-sandbox-agent}"
+AGENT_CONTAINER="${1:-ai-sandbox-claude-agent}"
 PROXY_CONTAINER="${2:-ai-sandbox-proxy}"
 CHAIN="AI_SANDBOX_EGRESS"
 

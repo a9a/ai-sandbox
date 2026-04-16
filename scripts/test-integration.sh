@@ -2,7 +2,38 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILES=(-f "$ROOT_DIR/docker-compose.yml" -f "$ROOT_DIR/.ci/docker-compose.test.yml")
+AGENT_KIND="${1:-claude}"
+
+case "$AGENT_KIND" in
+  claude)
+    COMPOSE_FILES=(
+      -f "$ROOT_DIR/docker-compose.yml"
+      -f "$ROOT_DIR/docker-compose.claude.yml"
+      -f "$ROOT_DIR/.ci/docker-compose.test.yml"
+    )
+    AGENT_SERVICE="claude-agent"
+    INSPECT_CONTAINER="ai-sandbox-claude-agent-inspect"
+    SECRET_HOST_FILE="$ROOT_DIR/secrets/anthropic_api_key.txt"
+    SECRET_CONTAINER_FILE="/run/secrets/anthropic_api_key"
+    SECRET_ENV_NAME="ANTHROPIC_API_KEY"
+    ;;
+  codex)
+    COMPOSE_FILES=(
+      -f "$ROOT_DIR/docker-compose.yml"
+      -f "$ROOT_DIR/docker-compose.codex.yml"
+      -f "$ROOT_DIR/.ci/docker-compose.test.yml"
+    )
+    AGENT_SERVICE="codex-agent"
+    INSPECT_CONTAINER="ai-sandbox-codex-agent-inspect"
+    SECRET_HOST_FILE="$ROOT_DIR/secrets/openai_api_key.txt"
+    SECRET_CONTAINER_FILE="/run/secrets/openai_api_key"
+    SECRET_ENV_NAME="OPENAI_API_KEY"
+    ;;
+  *)
+    echo "ERROR: unknown agent kind '$AGENT_KIND' (expected: claude|codex)" >&2
+    exit 1
+    ;;
+esac
 
 compose() {
   docker compose "${COMPOSE_FILES[@]}" "$@"
@@ -14,16 +45,16 @@ fail() {
 }
 
 cleanup() {
-  docker rm -f ai-sandbox-agent-inspect >/dev/null 2>&1 || true
+  docker rm -f "$INSPECT_CONTAINER" >/dev/null 2>&1 || true
   compose down -v --remove-orphans >/dev/null 2>&1 || true
 }
 
 trap cleanup EXIT
 
 mkdir -p "$ROOT_DIR/secrets"
-if [[ ! -f "$ROOT_DIR/secrets/anthropic_api_key.txt" ]]; then
-  printf "dummy-key-for-ci\n" > "$ROOT_DIR/secrets/anthropic_api_key.txt"
-  chmod 600 "$ROOT_DIR/secrets/anthropic_api_key.txt"
+if [[ ! -f "$SECRET_HOST_FILE" ]]; then
+  printf "dummy-key-for-ci\n" > "$SECRET_HOST_FILE"
+  chmod 600 "$SECRET_HOST_FILE"
 fi
 
 compose up -d --build proxy mock-upstream blocked-upstream tester
@@ -59,14 +90,15 @@ if compose exec -T tester sh -lc "curl -fsS -o /dev/null -x http://proxy:3128 ht
   fail "literal IP request unexpectedly succeeded"
 fi
 
-compose build agent
+compose build "$AGENT_SERVICE"
 
-compose run --rm agent sh -lc "test -f /run/secrets/anthropic_api_key && test -n \"\${ANTHROPIC_API_KEY:-}\""
+printf -v secret_check_cmd 'test -f %q && test -n "${%s:-}"' "$SECRET_CONTAINER_FILE" "$SECRET_ENV_NAME"
+compose run --rm "$AGENT_SERVICE" sh -lc "$secret_check_cmd"
 
-agent_cid="$(compose run -d --name ai-sandbox-agent-inspect agent sleep 120)"
-if docker inspect "$agent_cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q '^ANTHROPIC_API_KEY='; then
-  fail "ANTHROPIC_API_KEY is present in docker inspect env"
+agent_cid="$(compose run -d --name "$INSPECT_CONTAINER" "$AGENT_SERVICE" sleep 120)"
+if docker inspect "$agent_cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q "^${SECRET_ENV_NAME}="; then
+  fail "$SECRET_ENV_NAME is present in docker inspect env"
 fi
 docker rm -f "$agent_cid" >/dev/null 2>&1 || true
 
-echo "Integration tests passed"
+echo "Integration tests passed for $AGENT_KIND"

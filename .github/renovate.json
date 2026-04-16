@@ -57,11 +57,14 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile$/"
+        "/(^|/)Dockerfile\\.claude$/",
+        "/(^|/)Dockerfile\\.codex$/"
       ],
       "matchStrings": [
-        "NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
-        "ARG NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
+        "CLAUDE_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+        "CODEX_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+        "ARG CLAUDE_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+        "ARG CODEX_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
@@ -70,13 +73,26 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile$/"
+        "/(^|/)Dockerfile\\.claude$/"
       ],
       "matchStrings": [
         "CLAUDE_CODE_VERSION=(?<currentValue>[^\\s]+)",
         "ARG CLAUDE_CODE_VERSION=(?<currentValue>[^\\s]+)"
       ],
       "depNameTemplate": "@anthropic-ai/claude-code",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.env$/",
+        "/(^|/)Dockerfile\\.codex$/"
+      ],
+      "matchStrings": [
+        "CODEX_VERSION=(?<currentValue>[^\\s]+)",
+        "ARG CODEX_VERSION=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "@openai/codex",
       "datasourceTemplate": "npm"
     }
   ]
