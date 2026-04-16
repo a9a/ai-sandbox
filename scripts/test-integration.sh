@@ -88,8 +88,8 @@ fi
 
 compose build "$AGENT_SERVICE"
 
-printf -v secret_check_cmd 'test -f %q && test -n "${%s:-}"' "$SECRET_CONTAINER_FILE" "$SECRET_ENV_NAME"
-compose run --rm "$AGENT_SERVICE" sh -lc "$secret_check_cmd"
+compose run --rm "$AGENT_SERVICE" sh -lc \
+  "test -f '$SECRET_CONTAINER_FILE' && test -n \"\$(printenv '$SECRET_ENV_NAME' || true)\""
 
 agent_cid="$(compose run -d --name "$INSPECT_CONTAINER" "$AGENT_SERVICE" sleep 120)"
 if docker inspect "$agent_cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q "^${SECRET_ENV_NAME}="; then
