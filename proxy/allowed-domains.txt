@@ -2,3 +2,4 @@
 
 api.anthropic.com
 console.anthropic.com
+platform.claude.com

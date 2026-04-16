@@ -118,6 +118,7 @@ Example:
 ```txt
 api.anthropic.com
 console.anthropic.com
+platform.claude.com
 ```
 
 After changes, restart proxy:
