@@ -19,13 +19,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Prepare local secret files for tests
-        run: |
-          mkdir -p secrets
-          printf "dummy-key-for-ci\n" > secrets/anthropic_api_key.txt
-          printf "dummy-key-for-ci\n" > secrets/openai_api_key.txt
-          chmod 600 secrets/anthropic_api_key.txt secrets/openai_api_key.txt
-
       - name: Install shellcheck
         run: |
           sudo apt-get update

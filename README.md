@@ -35,15 +35,25 @@ CODEX_IMAGE_NAME=ai-sandbox-codex-agent:local
 
 ## Configure Secrets
 
-Create local secret files (not tracked by git):
+Both keys are optional.
+
+- If not set, containers still start, but authenticated API calls will fail.
+- If set, Compose mounts them as Docker secrets (`/run/secrets/...`) so they are not visible in `docker inspect` env.
+- `.env` already defines both as empty by default, so `docker compose up` does not fail when they are missing.
+
+Set keys from shell env:
 
 ```bash
-cp secrets/anthropic_api_key.txt.example secrets/anthropic_api_key.txt
-cp secrets/openai_api_key.txt.example secrets/openai_api_key.txt
-chmod 600 secrets/anthropic_api_key.txt secrets/openai_api_key.txt
+export ANTHROPIC_API_KEY='...'
+export OPENAI_API_KEY='...'
 ```
 
-Then replace file contents with real keys.
+Or load them from local files:
+
+```bash
+export ANTHROPIC_API_KEY="$(tr -d '\r\n' < secrets/anthropic_api_key.txt)"
+export OPENAI_API_KEY="$(tr -d '\r\n' < secrets/openai_api_key.txt)"
+```
 
 ## Make Targets
 
@@ -71,6 +81,11 @@ make codex-down-secure
 
 Backward-compatible aliases (`up`, `shell`, `down-secure`) default to Claude.
 
+Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mount.
+
+- Default path is `$PWD/.codex` (where `docker compose` is started).
+- Optional: set `CODEX_HOME_PATH` in `.env` (example: `/path/to/codex-home`) to override.
+
 ## Build Images
 
 ```bash
@@ -90,6 +105,7 @@ console.anthropic.com
 platform.claude.com
 api.openai.com
 auth.openai.com
+chatgpt.com
 ```
 
 After changes:
