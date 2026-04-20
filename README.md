@@ -2,6 +2,8 @@
 
 Deterministic Docker sandbox for AI coding agents with controlled egress through a proxy container.
 
+Test commit from the `ai/hello` branch.
+
 ## Files
 
 - `docker-compose.yml` - shared base stack (proxy + networks).
