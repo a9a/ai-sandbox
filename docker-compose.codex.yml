@@ -18,9 +18,14 @@ services:
       HTTPS_PROXY: http://proxy:3128
       NO_PROXY: localhost,127.0.0.1,proxy
       OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+      GITHUB_TOKEN_FILE: /run/secrets/github_token
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
     secrets:
       - source: openai_api_key
         target: openai_api_key
+      - source: github_token
+        target: github_token
     volumes:
       - ./:/home/devops/project
       - type: bind
@@ -32,3 +37,5 @@ services:
 secrets:
   openai_api_key:
     environment: OPENAI_API_KEY
+  github_token:
+    environment: GITHUB_TOKEN

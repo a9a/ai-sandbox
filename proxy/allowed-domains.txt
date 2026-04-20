@@ -9,3 +9,4 @@ chatgpt.com
 auth.docker.io
 registry-1.docker.io
 production.cloudflare.docker.com
+github.com

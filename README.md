@@ -16,7 +16,7 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 - `proxy/squid.conf` - proxy policy (domain allowlist).
 - `proxy/allowed-domains.txt` - destination domain allowlist.
 - `scripts/claude-entrypoint.sh` - loads Anthropic secret and drops to `devops`.
-- `scripts/codex-entrypoint.sh` - loads OpenAI secret and drops to `devops`.
+- `scripts/codex-entrypoint.sh` - loads OpenAI/GitHub secrets and drops to `devops`.
 - `scripts/apply-egress-firewall.sh` - host firewall policy (`DOCKER-USER`).
 - `scripts/remove-egress-firewall.sh` - removes host firewall policy.
 - `scripts/test-integration.sh` - integration tests (`claude` or `codex`).
@@ -39,17 +39,18 @@ DOCKER_CLI_IMAGE=docker:27-cli
 
 ## Configure Secrets
 
-Both keys are optional.
+All keys are optional.
 
 - If not set, containers still start, but authenticated API calls will fail.
 - If set, Compose mounts them as Docker secrets (`/run/secrets/...`) so they are not visible in `docker inspect` env.
-- `.env` already defines both as empty by default, so `docker compose up` does not fail when they are missing.
+- `.env` already defines all of them as empty by default, so `docker compose up` does not fail when they are missing.
 
 Set keys from shell env:
 
 ```bash
 export ANTHROPIC_API_KEY='...'
 export OPENAI_API_KEY='...'
+export GITHUB_TOKEN='...'
 ```
 
 Or load them from local files:
@@ -57,7 +58,21 @@ Or load them from local files:
 ```bash
 export ANTHROPIC_API_KEY="$(tr -d '\r\n' < secrets/anthropic_api_key.txt)"
 export OPENAI_API_KEY="$(tr -d '\r\n' < secrets/openai_api_key.txt)"
+export GITHUB_TOKEN="$(tr -d '\r\n' < secrets/github_token.txt)"
 ```
+
+## Configure Git Identity
+
+Set optional Git identity in `.env` (or export in shell):
+
+```bash
+export GIT_USER_NAME='ai-bot'
+export GIT_USER_EMAIL='ai-bot@users.noreply.github.com'
+```
+
+When set, both agent entrypoints apply these values via `git config --global` for user `devops` at container start.
+
+If `GITHUB_TOKEN` is present, the entrypoint writes `~/.git-credentials` and configures `credential.helper store` automatically.
 
 ## Make Targets
 
