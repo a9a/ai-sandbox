@@ -8,7 +8,8 @@ source "$ROOT_DIR/.env"
 set +a
 
 docker build \
-  -f "$ROOT_DIR/Dockerfile.claude" \
+  -f "$ROOT_DIR/Dockerfile.agent" \
+  --target claude \
   --build-arg CLAUDE_NODE_IMAGE="$CLAUDE_NODE_IMAGE" \
   --build-arg CLAUDE_CODE_VERSION="$CLAUDE_CODE_VERSION" \
   -t "$CLAUDE_IMAGE_NAME" \

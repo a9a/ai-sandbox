@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1@sha256:2780b5c3bab67f1f76c781860de469442999ed1a0d7992a5efdf2cffc0e3d769
+ARG DOCKER_CLI_IMAGE=docker:27-cli
+ARG CLAUDE_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
+ARG CODEX_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
+
+FROM ${DOCKER_CLI_IMAGE} AS dockercli
+
+FROM ${CLAUDE_NODE_IMAGE} AS claude
+ARG CLAUDE_CODE_VERSION=2.1.109
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    gosu \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+RUN usermod -l devops node && \
+    groupmod -n devops node && \
+    usermod -d /home/devops -m devops
+
+COPY scripts/claude-entrypoint.sh /usr/local/bin/claude-entrypoint.sh
+RUN chmod +x /usr/local/bin/claude-entrypoint.sh
+
+WORKDIR /home/devops/project
+ENTRYPOINT ["/usr/local/bin/claude-entrypoint.sh"]
+
+FROM ${CODEX_NODE_IMAGE} AS codex-base
+ARG CODEX_VERSION=0.121.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bubblewrap \
+    git \
+    curl \
+    gosu \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g @openai/codex@${CODEX_VERSION}
+
+RUN usermod -l devops node && \
+    groupmod -n devops node && \
+    usermod -d /home/devops -m devops
+
+WORKDIR /home/devops/project
+
+FROM codex-base AS codex
+COPY scripts/codex-entrypoint.sh /usr/local/bin/codex-entrypoint.sh
+RUN chmod +x /usr/local/bin/codex-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/codex-entrypoint.sh"]
+
+FROM codex-base AS codex-docker
+RUN mkdir -p /usr/local/libexec/docker/cli-plugins
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+COPY scripts/codex-entrypoint.sh /usr/local/bin/codex-entrypoint.sh
+RUN chmod +x /usr/local/bin/codex-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/codex-entrypoint.sh"]
