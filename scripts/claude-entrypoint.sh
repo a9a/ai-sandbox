@@ -72,8 +72,10 @@ if [[ "$(id -u)" -eq 0 ]]; then
     gosu devops git config --global user.email "$GIT_USER_EMAIL"
   fi
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    gosu devops sh -c 'umask 077; git config --global credential.helper store; cat > "$HOME/.git-credentials"; chmod 600 "$HOME/.git-credentials"' \
-      <<< "https://x-access-token:${GITHUB_TOKEN}@github.com"
+    gosu devops git config --global credential.helper store
+    printf 'https://x-access-token:%s@github.com\n' "$GITHUB_TOKEN" | \
+      gosu devops tee /home/devops/.git-credentials >/dev/null
+    gosu devops chmod 600 /home/devops/.git-credentials
   fi
   exec gosu devops "$@"
 fi
