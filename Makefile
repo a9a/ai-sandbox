@@ -31,6 +31,7 @@ help:
 	@echo "  make codex-docker-down-secure - Stop Docker-enabled stack and remove firewall"
 	@echo "  make test               - Run integration tests for Claude and Codex"
 	@echo "  make down-all           - Stop both Claude and Codex stacks"
+	@echo "  Optional: AI_HOME_PATH=/path mounts a custom host project directory"
 
 # Backward-compatible aliases (Claude as default)
 up: claude-up

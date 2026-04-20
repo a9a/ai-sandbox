@@ -18,8 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN npm install -g @openai/codex@${CODEX_VERSION}
 
-# Install Docker CLI only (without local Docker daemon) for remote DOCKER_HOST usage.
+# Install Docker CLI with Compose plugin (without local Docker daemon) for remote DOCKER_HOST usage.
+RUN mkdir -p /usr/local/libexec/docker/cli-plugins
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 
 # The 'node' user already exists with UID 1000 in this image.
 # We rename it to 'devops' for clarity.

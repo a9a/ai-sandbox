@@ -10,12 +10,12 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 - `docker-compose.codex.docker.yml` - Codex profile with sidecar Docker daemon.
 - `Dockerfile.claude` - Claude agent image.
 - `Dockerfile.codex` - Codex agent image.
-- `Dockerfile.codex.docker` - Codex agent image with Docker CLI only.
+- `Dockerfile.codex.docker` - Codex agent image with Docker CLI and Compose plugin.
 - `Makefile` - convenience commands for compose, firewall, and tests.
 - `.env` - pinned versions and image tags.
 - `proxy/squid.conf` - proxy policy (domain allowlist).
 - `proxy/allowed-domains.txt` - destination domain allowlist.
-- `scripts/claude-entrypoint.sh` - loads Anthropic secret and drops to `devops`.
+- `scripts/claude-entrypoint.sh` - loads Anthropic/GitHub secrets and drops to `devops`.
 - `scripts/codex-entrypoint.sh` - loads OpenAI/GitHub secrets and drops to `devops`.
 - `scripts/apply-egress-firewall.sh` - host firewall policy (`DOCKER-USER`).
 - `scripts/remove-egress-firewall.sh` - removes host firewall policy.
@@ -112,8 +112,15 @@ make codex-docker-down-secure
 ```
 
 This profile uses a rootless Docker daemon sidecar (`docker:dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
+On Docker Desktop and other nested-container environments, `docker-daemon` runs with `privileged: true` so inner containers can mount `/proc` and start correctly.
 
 Backward-compatible aliases (`up`, `shell`, `down-secure`) default to Claude.
+
+Agent project directory (`/home/devops/project`) is mounted from the host.
+
+- Default path is `.` (where `docker compose` is started).
+- Optional: set `AI_HOME_PATH` in `.env` (example: `/path/to/project`) to override.
+- In `codex-docker` profile, the same path is mounted into `docker-daemon` so bind mounts work via remote `DOCKER_HOST`.
 
 Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mount.
 
@@ -129,7 +136,7 @@ make codex-build
 
 ## Proxy Allowlist (Domain ACL)
 
-Edit `proxy/allowed-domains.txt` (one domain per line).
+Edit `proxy/allowed-domains.txt` (one domain per line; use `.domain.tld` for subdomain wildcard suffixes).
 
 Current baseline:
 Edit `proxy/allowed-domains.txt` (one domain per line).
@@ -144,8 +151,12 @@ api.openai.com
 auth.openai.com
 chatgpt.com
 auth.docker.io
+index.docker.io
+registry.docker.io
 registry-1.docker.io
 production.cloudflare.docker.com
+.r2.cloudflarestorage.com
+hub.docker.com
 ```
 
 After changes:

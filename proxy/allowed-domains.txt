@@ -1,4 +1,5 @@
-# One domain per line. Subdomains are matched automatically by dstdomain.
+# One domain per line.
+# Use a leading dot for wildcard suffix match (e.g. .example.com).
 
 api.anthropic.com
 console.anthropic.com
@@ -7,6 +8,10 @@ api.openai.com
 auth.openai.com
 chatgpt.com
 auth.docker.io
+index.docker.io
+registry.docker.io
 registry-1.docker.io
 production.cloudflare.docker.com
+.r2.cloudflarestorage.com
+hub.docker.com
 github.com

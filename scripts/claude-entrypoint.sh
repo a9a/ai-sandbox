@@ -2,6 +2,7 @@
 set -euo pipefail
 
 KEY_FILE="${ANTHROPIC_API_KEY_FILE:-/run/secrets/anthropic_api_key}"
+GITHUB_TOKEN_FILE="${GITHUB_TOKEN_FILE:-/run/secrets/github_token}"
 
 if [[ -z "${ANTHROPIC_API_KEY:-}" && -e "$KEY_FILE" ]]; then
   if [[ -r "$KEY_FILE" ]]; then
@@ -9,6 +10,16 @@ if [[ -z "${ANTHROPIC_API_KEY:-}" && -e "$KEY_FILE" ]]; then
     export ANTHROPIC_API_KEY
   else
     echo "Secret file exists but is not readable: $KEY_FILE" >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "${GITHUB_TOKEN:-}" && -e "$GITHUB_TOKEN_FILE" ]]; then
+  if [[ -r "$GITHUB_TOKEN_FILE" ]]; then
+    GITHUB_TOKEN="$(tr -d '\r\n' < "$GITHUB_TOKEN_FILE")"
+    export GITHUB_TOKEN
+  else
+    echo "Secret file exists but is not readable: $GITHUB_TOKEN_FILE" >&2
     exit 1
   fi
 fi
