@@ -137,9 +137,6 @@ make codex-build
 Edit `proxy/allowed-domains.txt` (one domain per line; use `.domain.tld` for subdomain wildcard suffixes).
 
 Current baseline:
-Edit `proxy/allowed-domains.txt` (one domain per line).
-
-Current baseline:
 
 ```txt
 api.anthropic.com
