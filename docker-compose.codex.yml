@@ -27,7 +27,7 @@ services:
       - source: github_token
         target: github_token
     volumes:
-      - ./:/home/devops/project
+      - ${AI_HOME_PATH:-.}:/home/devops/project
       - type: bind
         source: ${CODEX_HOME_PATH:-${PWD}/.codex}
         target: /home/devops/.codex

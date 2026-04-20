@@ -32,6 +32,7 @@ services:
   docker-daemon:
     image: docker:27-dind-rootless
     container_name: ai-sandbox-codex-docker
+    privileged: true
     security_opt:
       - seccomp=unconfined
       - apparmor=unconfined
@@ -62,6 +63,7 @@ services:
     networks:
       - agent_net
     volumes:
+      - ${AI_HOME_PATH:-.}:/home/devops/project
       - codex_dind_data:/home/rootless/.local/share/docker
       - codex_dind_sock:/run/user/1000
     restart: unless-stopped
