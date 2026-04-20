@@ -15,6 +15,8 @@ case "$AGENT_KIND" in
     INSPECT_CONTAINER="ai-sandbox-claude-agent-inspect"
     SECRET_CONTAINER_FILE="/run/secrets/anthropic_api_key"
     SECRET_ENV_NAME="ANTHROPIC_API_KEY"
+    SECONDARY_SECRET_CONTAINER_FILE="/run/secrets/github_token"
+    SECONDARY_SECRET_ENV_NAME="GITHUB_TOKEN"
     ;;
   codex)
     COMPOSE_FILES=(
@@ -26,6 +28,8 @@ case "$AGENT_KIND" in
     INSPECT_CONTAINER="ai-sandbox-codex-agent-inspect"
     SECRET_CONTAINER_FILE="/run/secrets/openai_api_key"
     SECRET_ENV_NAME="OPENAI_API_KEY"
+    SECONDARY_SECRET_CONTAINER_FILE="/run/secrets/github_token"
+    SECONDARY_SECRET_ENV_NAME="GITHUB_TOKEN"
     ;;
   *)
     echo "ERROR: unknown agent kind '$AGENT_KIND' (expected: claude|codex)" >&2
@@ -51,6 +55,9 @@ trap cleanup EXIT
 
 if [[ -z "${!SECRET_ENV_NAME:-}" ]]; then
   export "$SECRET_ENV_NAME=dummy-key-for-ci"
+fi
+if [[ -z "${!SECONDARY_SECRET_ENV_NAME:-}" ]]; then
+  export "$SECONDARY_SECRET_ENV_NAME=dummy-github-token-for-ci"
 fi
 
 compose up -d --build proxy mock-upstream blocked-upstream tester
@@ -90,10 +97,15 @@ compose build "$AGENT_SERVICE"
 
 compose run --rm "$AGENT_SERVICE" sh -lc \
   "test -f '$SECRET_CONTAINER_FILE' && test -n \"\$(printenv '$SECRET_ENV_NAME' || true)\""
+compose run --rm "$AGENT_SERVICE" sh -lc \
+  "test -f '$SECONDARY_SECRET_CONTAINER_FILE' && test -n \"\$(printenv '$SECONDARY_SECRET_ENV_NAME' || true)\""
 
 agent_cid="$(compose run -d --name "$INSPECT_CONTAINER" "$AGENT_SERVICE" sleep 120)"
 if docker inspect "$agent_cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q "^${SECRET_ENV_NAME}="; then
   fail "$SECRET_ENV_NAME is present in docker inspect env"
+fi
+if docker inspect "$agent_cid" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q "^${SECONDARY_SECRET_ENV_NAME}="; then
+  fail "$SECONDARY_SECRET_ENV_NAME is present in docker inspect env"
 fi
 docker rm -f "$agent_cid" >/dev/null 2>&1 || true
 

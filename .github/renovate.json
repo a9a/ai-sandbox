@@ -57,14 +57,15 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile\\.claude$/",
-        "/(^|/)Dockerfile\\.codex$/"
+        "/(^|/)Dockerfile\\.agent$/"
       ],
       "matchStrings": [
         "CLAUDE_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
         "CODEX_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+        "DOCKER_CLI_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?",
         "ARG CLAUDE_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
-        "ARG CODEX_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
+        "ARG CODEX_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+        "ARG DOCKER_CLI_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
@@ -73,7 +74,7 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile\\.claude$/"
+        "/(^|/)Dockerfile\\.agent$/"
       ],
       "matchStrings": [
         "CLAUDE_CODE_VERSION=(?<currentValue>[^\\s]+)",
@@ -86,7 +87,7 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile\\.codex$/"
+        "/(^|/)Dockerfile\\.agent$/"
       ],
       "matchStrings": [
         "CODEX_VERSION=(?<currentValue>[^\\s]+)",

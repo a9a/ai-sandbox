@@ -1,13 +1,15 @@
 COMPOSE_BASE := docker compose -f docker-compose.yml
 COMPOSE_CLAUDE := $(COMPOSE_BASE) -f docker-compose.claude.yml
 COMPOSE_CODEX := $(COMPOSE_BASE) -f docker-compose.codex.yml
+COMPOSE_CODEX_DOCKER := $(COMPOSE_CODEX) -f docker-compose.codex.docker.yml
 COMPOSE_ALL := $(COMPOSE_BASE) -f docker-compose.claude.yml -f docker-compose.codex.yml
 
 .PHONY: help \
 	up down up-secure down-secure shell logs build test \
 	claude-build codex-build claude-up claude-down claude-up-secure claude-down-secure claude-shell claude-new claude-logs \
 	codex-up codex-down codex-up-secure codex-down-secure codex-shell codex-new codex-logs \
-	test-claude test-codex firewall-apply firewall-remove firewall-apply-claude firewall-apply-codex down-all
+	codex-docker-up codex-docker-down codex-docker-up-secure codex-docker-down-secure codex-docker-shell codex-docker-new codex-docker-logs \
+	test-claude test-codex firewall-apply firewall-remove firewall-apply-claude firewall-apply-codex firewall-apply-codex-docker down-all
 
 help:
 	@echo "Available targets:"
@@ -21,8 +23,15 @@ help:
 	@echo "                           Optional: CODEX_HOME_PATH=/path make codex-new"
 	@echo "  make codex-up-secure    - Start Codex stack and apply host firewall policy"
 	@echo "  make codex-down-secure  - Remove firewall policy and stop Codex stack"
+	@echo "  make codex-docker-up    - Start Codex stack with sidecar Docker daemon"
+	@echo "  make codex-docker-shell - Attach to running Codex (Docker-enabled profile)"
+	@echo "  make codex-docker-new   - Run one-off Codex (Docker-enabled profile)"
+	@echo "                           Optional: CODEX_HOME_PATH=/path make codex-docker-new"
+	@echo "  make codex-docker-up-secure   - Start Docker-enabled Codex stack with firewall"
+	@echo "  make codex-docker-down-secure - Stop Docker-enabled stack and remove firewall"
 	@echo "  make test               - Run integration tests for Claude and Codex"
 	@echo "  make down-all           - Stop both Claude and Codex stacks"
+	@echo "  Optional: AI_HOME_PATH=/path mounts a custom host project directory"
 
 # Backward-compatible aliases (Claude as default)
 up: claude-up
@@ -89,12 +98,36 @@ codex-new:
 codex-logs:
 	$(COMPOSE_CODEX) logs -f proxy codex-agent
 
+codex-docker-up:
+	$(COMPOSE_CODEX_DOCKER) up -d --build
+
+codex-docker-down:
+	$(COMPOSE_CODEX_DOCKER) down
+
+codex-docker-up-secure: codex-docker-up firewall-apply-codex-docker
+
+codex-docker-down-secure:
+	-$(MAKE) firewall-remove
+	$(COMPOSE_CODEX_DOCKER) down
+
+codex-docker-shell:
+	$(COMPOSE_CODEX_DOCKER) exec --user devops -e HOME=/home/devops codex-agent codex
+
+codex-docker-new:
+	CODEX_HOME_PATH="$(CODEX_HOME_PATH)" $(COMPOSE_CODEX_DOCKER) run --rm codex-agent codex
+
+codex-docker-logs:
+	$(COMPOSE_CODEX_DOCKER) logs -f proxy docker-daemon codex-agent
+
 firewall-apply: firewall-apply-claude
 
 firewall-apply-claude:
 	./scripts/apply-egress-firewall.sh ai-sandbox-claude-agent ai-sandbox-proxy
 
 firewall-apply-codex:
+	./scripts/apply-egress-firewall.sh ai-sandbox-codex-agent ai-sandbox-proxy
+
+firewall-apply-codex-docker:
 	./scripts/apply-egress-firewall.sh ai-sandbox-codex-agent ai-sandbox-proxy
 
 firewall-remove:
@@ -108,4 +141,5 @@ test-codex:
 
 down-all:
 	-$(MAKE) firewall-remove
+	-$(COMPOSE_CODEX_DOCKER) down
 	$(COMPOSE_ALL) down
