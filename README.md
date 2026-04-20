@@ -8,9 +8,7 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 - `docker-compose.claude.yml` - Claude agent service.
 - `docker-compose.codex.yml` - Codex agent service.
 - `docker-compose.codex.docker.yml` - Codex profile with sidecar Docker daemon.
-- `Dockerfile.claude` - Claude agent image.
-- `Dockerfile.codex` - Codex agent image.
-- `Dockerfile.codex.docker` - Codex agent image with Docker CLI and Compose plugin.
+- `Dockerfile.agent` - shared Dockerfile with targets: `claude`, `codex`, `codex-docker`.
 - `Makefile` - convenience commands for compose, firewall, and tests.
 - `.env` - pinned versions and image tags.
 - `proxy/squid.conf` - proxy policy (domain allowlist).

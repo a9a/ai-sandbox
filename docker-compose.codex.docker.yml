@@ -2,7 +2,8 @@ services:
   codex-agent:
     build:
       context: .
-      dockerfile: Dockerfile.codex.docker
+      dockerfile: Dockerfile.agent
+      target: codex-docker
       args:
         CODEX_NODE_IMAGE: ${CODEX_NODE_IMAGE:-node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c}
         CODEX_VERSION: ${CODEX_VERSION:-0.121.0}

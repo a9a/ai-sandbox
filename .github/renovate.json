@@ -57,9 +57,7 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile\\.claude$/",
-        "/(^|/)Dockerfile\\.codex$/",
-        "/(^|/)Dockerfile\\.codex\\.docker$/"
+        "/(^|/)Dockerfile\\.agent$/"
       ],
       "matchStrings": [
         "CLAUDE_NODE_IMAGE=(?<depName>[\\w./-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)",
@@ -76,7 +74,7 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile\\.claude$/"
+        "/(^|/)Dockerfile\\.agent$/"
       ],
       "matchStrings": [
         "CLAUDE_CODE_VERSION=(?<currentValue>[^\\s]+)",
@@ -89,8 +87,7 @@
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.env$/",
-        "/(^|/)Dockerfile\\.codex$/",
-        "/(^|/)Dockerfile\\.codex\\.docker$/"
+        "/(^|/)Dockerfile\\.agent$/"
       ],
       "matchStrings": [
         "CODEX_VERSION=(?<currentValue>[^\\s]+)",
