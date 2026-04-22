@@ -5,10 +5,13 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 ## Files
 
 - `docker-compose.yml` - shared base stack (proxy + networks).
+- `docker-compose.agent.yml` - shared agent service base used by Claude/Codex via `extends`.
+- `docker-compose.agent.docker.yml` - shared Docker sidecar (`dind-rootless`) for Docker-enabled profiles.
 - `docker-compose.claude.yml` - Claude agent service.
+- `docker-compose.claude.docker.yml` - Claude profile with sidecar Docker daemon.
 - `docker-compose.codex.yml` - Codex agent service.
 - `docker-compose.codex.docker.yml` - Codex profile with sidecar Docker daemon.
-- `Dockerfile.agent` - shared Dockerfile with targets: `claude`, `codex`, `codex-docker`.
+- `Dockerfile.agent` - shared Dockerfile with targets: `claude`, `claude-docker`, `codex`, `codex-docker`.
 - `Makefile` - convenience commands for compose, firewall, and tests.
 - `.env` - pinned versions and image tags.
 - `proxy/squid.conf` - proxy policy (domain allowlist).
@@ -30,9 +33,12 @@ CODEX_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d1
 CLAUDE_CODE_VERSION=2.1.109
 CODEX_VERSION=0.121.0
 CLAUDE_IMAGE_NAME=ai-sandbox-claude-agent:local
+CLAUDE_DOCKER_IMAGE_NAME=ai-sandbox-claude-agent-docker:local
 CODEX_IMAGE_NAME=ai-sandbox-codex-agent:local
 CODEX_DOCKER_IMAGE_NAME=ai-sandbox-codex-agent-docker:local
 DOCKER_CLI_IMAGE=docker:27-cli
+DOCKER_DIND_IMAGE=docker:27-dind-rootless
+HELM_VERSION=v3.18.4
 ```
 
 ## Configure Secrets
@@ -89,6 +95,16 @@ make claude-new
 make claude-down-secure
 ```
 
+Claude with Docker-in-Docker sidecar:
+
+```bash
+make claude-docker-up
+make claude-docker-shell
+make claude-docker-new
+make claude-docker-up-secure
+make claude-docker-down-secure
+```
+
 Most common (Codex):
 
 ```bash
@@ -109,7 +125,8 @@ make codex-docker-up-secure
 make codex-docker-down-secure
 ```
 
-This profile uses a rootless Docker daemon sidecar (`docker:dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
+Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar (`DOCKER_DIND_IMAGE`, default `docker:27-dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
+Both Docker-enabled agent images install `docker`, `docker compose`, and `helm` from one shared tooling stage in `Dockerfile.agent`.
 On Docker Desktop and other nested-container environments, `docker-daemon` runs with `privileged: true` so inner containers can mount `/proc` and start correctly.
 
 Backward-compatible aliases (`up`, `shell`, `down-secure`) default to Claude.
@@ -118,7 +135,7 @@ Agent project directory (`/home/devops/project`) is mounted from the host.
 
 - Default path is `.` (where `docker compose` is started).
 - Optional: set `AI_HOME_PATH` in `.env` (example: `/path/to/project`) to override.
-- In `codex-docker` profile, the same path is mounted into `docker-daemon` so bind mounts work via remote `DOCKER_HOST`.
+- In `claude-docker` and `codex-docker` profiles, the same path is mounted into `docker-daemon` so bind mounts work via remote `DOCKER_HOST`.
 
 Claude home data (`/home/devops/.claude`) is persisted in a host directory bind mount.
 
@@ -171,12 +188,13 @@ docker compose -f docker-compose.yml up -d --build proxy
 - Proxy is attached to both `agent_net` and `egress_net`.
 - Squid denies `CONNECT` to literal IP targets.
 - Use host firewall for hard enforcement (`agent -> proxy:3128` only).
-- In `codex-docker-*-secure` mode no extra network exception is needed for Docker (Unix socket is used).
+- In `claude-docker-*-secure` and `codex-docker-*-secure` modes no extra network exception is needed for Docker (Unix socket is used).
 
 Apply/remove host firewall:
 
 ```bash
 make firewall-apply-claude
+make firewall-apply-claude-docker
 make firewall-apply-codex
 make firewall-apply-codex-docker
 make firewall-remove

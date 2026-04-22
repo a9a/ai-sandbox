@@ -37,8 +37,9 @@ jobs:
         run: |
           docker compose -f docker-compose.yml config >/dev/null
           docker compose -f docker-compose.yml -f docker-compose.claude.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.claude.yml -f docker-compose.agent.docker.yml -f docker-compose.claude.docker.yml config >/dev/null
           docker compose -f docker-compose.yml -f docker-compose.codex.yml config >/dev/null
-          docker compose -f docker-compose.yml -f docker-compose.codex.yml -f docker-compose.codex.docker.yml config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.codex.yml -f docker-compose.agent.docker.yml -f docker-compose.codex.docker.yml config >/dev/null
           docker compose -f docker-compose.yml -f docker-compose.claude.yml -f .ci/docker-compose.test.yml config >/dev/null
           docker compose -f docker-compose.yml -f docker-compose.codex.yml -f .ci/docker-compose.test.yml config >/dev/null
 
@@ -46,8 +47,9 @@ jobs:
         run: |
           docker compose -f docker-compose.yml build proxy
           docker compose -f docker-compose.yml -f docker-compose.claude.yml build claude-agent
+          docker compose -f docker-compose.yml -f docker-compose.claude.yml -f docker-compose.agent.docker.yml -f docker-compose.claude.docker.yml build claude-agent
           docker compose -f docker-compose.yml -f docker-compose.codex.yml build codex-agent
-          docker compose -f docker-compose.yml -f docker-compose.codex.yml -f docker-compose.codex.docker.yml build codex-agent
+          docker compose -f docker-compose.yml -f docker-compose.codex.yml -f docker-compose.agent.docker.yml -f docker-compose.codex.docker.yml build codex-agent
 
       - name: Integration tests (Claude)
         run: ./scripts/test-integration.sh claude

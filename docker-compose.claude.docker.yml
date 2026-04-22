@@ -1,11 +1,11 @@
 services:
-  codex-agent:
+  claude-agent:
     build:
-      target: codex-docker
+      target: claude-docker
       args:
         DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
         HELM_VERSION: ${HELM_VERSION:-v3.18.4}
-    image: ${CODEX_DOCKER_IMAGE_NAME:-ai-sandbox-codex-agent-docker:local}
+    image: ${CLAUDE_DOCKER_IMAGE_NAME:-ai-sandbox-claude-agent-docker:local}
     depends_on:
       docker-daemon:
         condition: service_healthy
