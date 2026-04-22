@@ -1,8 +1,8 @@
 COMPOSE_BASE := docker compose -f docker-compose.yml
 COMPOSE_CLAUDE := $(COMPOSE_BASE) -f docker-compose.claude.yml
-COMPOSE_CLAUDE_DOCKER := $(COMPOSE_CLAUDE) -f docker-compose.claude.docker.yml
+COMPOSE_CLAUDE_DOCKER := $(COMPOSE_CLAUDE) -f docker-compose.agent.docker.yml -f docker-compose.claude.docker.yml
 COMPOSE_CODEX := $(COMPOSE_BASE) -f docker-compose.codex.yml
-COMPOSE_CODEX_DOCKER := $(COMPOSE_CODEX) -f docker-compose.codex.docker.yml
+COMPOSE_CODEX_DOCKER := $(COMPOSE_CODEX) -f docker-compose.agent.docker.yml -f docker-compose.codex.docker.yml
 COMPOSE_ALL := $(COMPOSE_BASE) -f docker-compose.claude.yml -f docker-compose.codex.yml
 
 .PHONY: help \

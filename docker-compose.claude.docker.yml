@@ -4,6 +4,7 @@ services:
       target: claude-docker
       args:
         DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
+        HELM_VERSION: ${HELM_VERSION:-v3.18.4}
     image: ${CLAUDE_DOCKER_IMAGE_NAME:-ai-sandbox-claude-agent-docker:local}
     depends_on:
       docker-daemon:
@@ -11,62 +12,4 @@ services:
     environment:
       DOCKER_HOST: unix:///run/user/1000/docker.sock
     volumes:
-      - claude_dind_sock:/run/user/1000
-
-  docker-daemon-init:
-    image: alpine:3.20
-    container_name: ai-sandbox-claude-docker-init
-    command:
-      - sh
-      - -lc
-      - mkdir -p /run/user/1000 && chown -R 1000:1000 /run/user/1000 && chmod 700 /run/user/1000
-    networks:
-      - agent_net
-    volumes:
-      - claude_dind_sock:/run/user/1000
-    restart: "no"
-
-  docker-daemon:
-    image: ${DOCKER_DIND_IMAGE:-docker:27-dind-rootless}
-    container_name: ai-sandbox-claude-docker
-    privileged: true
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
-    devices:
-      - /dev/fuse
-      - /dev/net/tun
-    depends_on:
-      proxy:
-        condition: service_healthy
-      docker-daemon-init:
-        condition: service_completed_successfully
-    environment:
-      DOCKER_TLS_CERTDIR: ""
-      DOCKERD_ROOTLESS_ROOTLESSKIT_NET: vpnkit
-      DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER: builtin
-      HTTP_PROXY: http://proxy:3128
-      HTTPS_PROXY: http://proxy:3128
-      NO_PROXY: localhost,127.0.0.1,proxy,docker-daemon
-    command:
-      - --host=unix:///run/user/1000/docker.sock
-      - --iptables=false
-    healthcheck:
-      test: ["CMD-SHELL", "docker --host=unix:///run/user/1000/docker.sock info >/dev/null 2>&1"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
-    networks:
-      - agent_net
-    volumes:
-      - ${AI_HOME_PATH:-.}:/home/devops/project
-      - claude_dind_data:/home/rootless/.local/share/docker
-      - claude_dind_sock:/run/user/1000
-    restart: unless-stopped
-
-volumes:
-  claude_dind_data:
-    name: ai-sandbox-claude-dind-data
-  claude_dind_sock:
-    name: ai-sandbox-claude-dind-sock
+      - agent_dind_sock:/run/user/1000

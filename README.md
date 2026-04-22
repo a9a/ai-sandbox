@@ -5,6 +5,8 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 ## Files
 
 - `docker-compose.yml` - shared base stack (proxy + networks).
+- `docker-compose.agent.yml` - shared agent service base used by Claude/Codex via `extends`.
+- `docker-compose.agent.docker.yml` - shared Docker sidecar (`dind-rootless`) for Docker-enabled profiles.
 - `docker-compose.claude.yml` - Claude agent service.
 - `docker-compose.claude.docker.yml` - Claude profile with sidecar Docker daemon.
 - `docker-compose.codex.yml` - Codex agent service.
@@ -36,6 +38,7 @@ CODEX_IMAGE_NAME=ai-sandbox-codex-agent:local
 CODEX_DOCKER_IMAGE_NAME=ai-sandbox-codex-agent-docker:local
 DOCKER_CLI_IMAGE=docker:27-cli
 DOCKER_DIND_IMAGE=docker:27-dind-rootless
+HELM_VERSION=v3.18.4
 ```
 
 ## Configure Secrets
@@ -123,6 +126,7 @@ make codex-docker-down-secure
 ```
 
 Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar (`DOCKER_DIND_IMAGE`, default `docker:27-dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
+Both Docker-enabled agent images install `docker`, `docker compose`, and `helm` from one shared tooling stage in `Dockerfile.agent`.
 On Docker Desktop and other nested-container environments, `docker-daemon` runs with `privileged: true` so inner containers can mount `/proc` and start correctly.
 
 Backward-compatible aliases (`up`, `shell`, `down-secure`) default to Claude.

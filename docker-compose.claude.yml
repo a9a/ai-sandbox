@@ -1,39 +1,24 @@
 services:
   claude-agent:
+    extends:
+      file: docker-compose.agent.yml
+      service: agent
     build:
-      context: .
-      dockerfile: Dockerfile.agent
       target: claude
       args:
         CLAUDE_NODE_IMAGE: ${CLAUDE_NODE_IMAGE:-node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c}
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.109}
     image: ${CLAUDE_IMAGE_NAME:-ai-sandbox-claude-agent:local}
     container_name: ai-sandbox-claude-agent
-    depends_on:
-      proxy:
-        condition: service_healthy
-    networks:
-      - agent_net
     environment:
-      HTTP_PROXY: http://proxy:3128
-      HTTPS_PROXY: http://proxy:3128
-      NO_PROXY: localhost,127.0.0.1,proxy
       ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
-      GITHUB_TOKEN_FILE: /run/secrets/github_token
-      GIT_USER_NAME: ${GIT_USER_NAME:-}
-      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
     secrets:
       - source: anthropic_api_key
         target: anthropic_api_key
-      - source: github_token
-        target: github_token
     volumes:
-      - ${AI_HOME_PATH:-.}:/home/devops/project
       - type: bind
         source: ${CLAUDE_HOME_PATH:-${PWD}/.claude}
         target: /home/devops/.claude
-    stdin_open: true
-    tty: true
 
 secrets:
   anthropic_api_key:

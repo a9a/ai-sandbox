@@ -30,6 +30,7 @@ jobs:
             --build-arg CLAUDE_NODE_IMAGE="$CLAUDE_NODE_IMAGE" \
             --build-arg CLAUDE_CODE_VERSION="$CLAUDE_CODE_VERSION" \
             --build-arg DOCKER_CLI_IMAGE="$DOCKER_CLI_IMAGE" \
+            --build-arg HELM_VERSION="$HELM_VERSION" \
             -t ai-sandbox-claude-agent-docker:security .
           docker build -f Dockerfile.agent --target codex \
             --build-arg CODEX_NODE_IMAGE="$CODEX_NODE_IMAGE" \
@@ -39,6 +40,7 @@ jobs:
             --build-arg CODEX_NODE_IMAGE="$CODEX_NODE_IMAGE" \
             --build-arg CODEX_VERSION="$CODEX_VERSION" \
             --build-arg DOCKER_CLI_IMAGE="$DOCKER_CLI_IMAGE" \
+            --build-arg HELM_VERSION="$HELM_VERSION" \
             -t ai-sandbox-codex-agent-docker:security .
           docker build -t ai-sandbox-proxy:security ./proxy
 
