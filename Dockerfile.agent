@@ -22,6 +22,7 @@ RUN usermod -l devops node && \
     usermod -d /home/devops -m devops
 
 COPY scripts/claude-entrypoint.sh /usr/local/bin/claude-entrypoint.sh
+COPY scripts/agent-entrypoint-lib.sh /usr/local/bin/agent-entrypoint-lib.sh
 RUN chmod +x /usr/local/bin/claude-entrypoint.sh
 
 WORKDIR /home/devops/project
@@ -48,6 +49,7 @@ WORKDIR /home/devops/project
 
 FROM codex-base AS codex
 COPY scripts/codex-entrypoint.sh /usr/local/bin/codex-entrypoint.sh
+COPY scripts/agent-entrypoint-lib.sh /usr/local/bin/agent-entrypoint-lib.sh
 RUN chmod +x /usr/local/bin/codex-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/codex-entrypoint.sh"]
 
@@ -56,5 +58,6 @@ RUN mkdir -p /usr/local/libexec/docker/cli-plugins
 COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 COPY scripts/codex-entrypoint.sh /usr/local/bin/codex-entrypoint.sh
+COPY scripts/agent-entrypoint-lib.sh /usr/local/bin/agent-entrypoint-lib.sh
 RUN chmod +x /usr/local/bin/codex-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/codex-entrypoint.sh"]
