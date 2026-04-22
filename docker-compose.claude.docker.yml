@@ -1,21 +1,21 @@
 services:
-  codex-agent:
+  claude-agent:
     build:
-      target: codex-docker
+      target: claude-docker
       args:
         DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
-    image: ${CODEX_DOCKER_IMAGE_NAME:-ai-sandbox-codex-agent-docker:local}
+    image: ${CLAUDE_DOCKER_IMAGE_NAME:-ai-sandbox-claude-agent-docker:local}
     depends_on:
       docker-daemon:
         condition: service_healthy
     environment:
       DOCKER_HOST: unix:///run/user/1000/docker.sock
     volumes:
-      - codex_dind_sock:/run/user/1000
+      - claude_dind_sock:/run/user/1000
 
   docker-daemon-init:
     image: alpine:3.20
-    container_name: ai-sandbox-codex-docker-init
+    container_name: ai-sandbox-claude-docker-init
     command:
       - sh
       - -lc
@@ -23,12 +23,12 @@ services:
     networks:
       - agent_net
     volumes:
-      - codex_dind_sock:/run/user/1000
+      - claude_dind_sock:/run/user/1000
     restart: "no"
 
   docker-daemon:
     image: ${DOCKER_DIND_IMAGE:-docker:27-dind-rootless}
-    container_name: ai-sandbox-codex-docker
+    container_name: ai-sandbox-claude-docker
     privileged: true
     security_opt:
       - seccomp=unconfined
@@ -61,12 +61,12 @@ services:
       - agent_net
     volumes:
       - ${AI_HOME_PATH:-.}:/home/devops/project
-      - codex_dind_data:/home/rootless/.local/share/docker
-      - codex_dind_sock:/run/user/1000
+      - claude_dind_data:/home/rootless/.local/share/docker
+      - claude_dind_sock:/run/user/1000
     restart: unless-stopped
 
 volumes:
-  codex_dind_data:
-    name: ai-sandbox-codex-dind-data
-  codex_dind_sock:
-    name: ai-sandbox-codex-dind-sock
+  claude_dind_data:
+    name: ai-sandbox-claude-dind-data
+  claude_dind_sock:
+    name: ai-sandbox-claude-dind-sock

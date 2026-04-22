@@ -26,6 +26,11 @@ jobs:
             --build-arg CLAUDE_NODE_IMAGE="$CLAUDE_NODE_IMAGE" \
             --build-arg CLAUDE_CODE_VERSION="$CLAUDE_CODE_VERSION" \
             -t ai-sandbox-claude-agent:security .
+          docker build -f Dockerfile.agent --target claude-docker \
+            --build-arg CLAUDE_NODE_IMAGE="$CLAUDE_NODE_IMAGE" \
+            --build-arg CLAUDE_CODE_VERSION="$CLAUDE_CODE_VERSION" \
+            --build-arg DOCKER_CLI_IMAGE="$DOCKER_CLI_IMAGE" \
+            -t ai-sandbox-claude-agent-docker:security .
           docker build -f Dockerfile.agent --target codex \
             --build-arg CODEX_NODE_IMAGE="$CODEX_NODE_IMAGE" \
             --build-arg CODEX_VERSION="$CODEX_VERSION" \
@@ -72,6 +77,16 @@ jobs:
         with:
           scan-type: image
           image-ref: ai-sandbox-proxy:security
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy Claude Docker image scan
+        uses: *trivy_action
+        with:
+          scan-type: image
+          image-ref: ai-sandbox-claude-agent-docker:security
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
