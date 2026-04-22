@@ -38,7 +38,7 @@ jobs:
           docker build -t ai-sandbox-proxy:security ./proxy
 
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: &trivy_action aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: fs
           scan-ref: .
@@ -48,7 +48,7 @@ jobs:
           format: table
 
       - name: Trivy Claude image scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-claude-agent:security
@@ -58,7 +58,7 @@ jobs:
           format: table
 
       - name: Trivy Codex image scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-codex-agent:security
@@ -68,7 +68,7 @@ jobs:
           format: table
 
       - name: Trivy proxy image scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-proxy:security
@@ -78,7 +78,7 @@ jobs:
           format: table
 
       - name: Trivy Codex Docker image scan
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-codex-agent-docker:security
