@@ -120,6 +120,11 @@ Agent project directory (`/home/devops/project`) is mounted from the host.
 - Optional: set `AI_HOME_PATH` in `.env` (example: `/path/to/project`) to override.
 - In `codex-docker` profile, the same path is mounted into `docker-daemon` so bind mounts work via remote `DOCKER_HOST`.
 
+Claude home data (`/home/devops/.claude`) is persisted in a host directory bind mount.
+
+- Default path is `$PWD/.claude` (where `docker compose` is started).
+- Optional: set `CLAUDE_HOME_PATH` in `.env` (example: `/path/to/claude-home`) to override.
+
 Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mount.
 
 - Default path is `$PWD/.codex` (where `docker compose` is started).
