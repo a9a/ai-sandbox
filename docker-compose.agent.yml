@@ -22,7 +22,3 @@ services:
       - ${AI_HOME_PATH:-.}:/home/devops/project
     stdin_open: true
     tty: true
-
-secrets:
-  github_token:
-    environment: GITHUB_TOKEN

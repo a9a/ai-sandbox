@@ -23,5 +23,3 @@ services:
 secrets:
   openai_api_key:
     environment: OPENAI_API_KEY
-  github_token:
-    environment: GITHUB_TOKEN

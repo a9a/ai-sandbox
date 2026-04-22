@@ -15,6 +15,10 @@ services:
       - egress_net
     restart: unless-stopped
 
+secrets:
+  github_token:
+    environment: GITHUB_TOKEN
+
 networks:
   # Internal network: agent can talk to proxy but has no direct internet egress.
   agent_net:

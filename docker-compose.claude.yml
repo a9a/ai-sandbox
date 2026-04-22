@@ -23,5 +23,3 @@ services:
 secrets:
   anthropic_api_key:
     environment: ANTHROPIC_API_KEY
-  github_token:
-    environment: GITHUB_TOKEN
