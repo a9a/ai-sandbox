@@ -29,6 +29,9 @@ services:
         target: github_token
     volumes:
       - ${AI_HOME_PATH:-.}:/home/devops/project
+      - type: bind
+        source: ${CLAUDE_HOME_PATH:-${PWD}/.claude}
+        target: /home/devops/.claude
     stdin_open: true
     tty: true
 

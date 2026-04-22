@@ -8,8 +8,7 @@ load_secret_from_file() {
     if [[ -r "$secret_file" ]]; then
       local secret_value
       secret_value="$(tr -d '\r\n' < "$secret_file")"
-      printf -v "$env_name" '%s' "$secret_value"
-      export "$env_name"
+      export "$env_name=$secret_value"
     else
       echo "Secret file exists but is not readable: $secret_file" >&2
       exit 1
