@@ -22,7 +22,7 @@ RUN apk add --no-cache curl tar && \
     rm -rf /tmp/helm.tgz /tmp/linux-${HELM_ARCH}
 
 FROM ${CLAUDE_NODE_IMAGE} AS claude-base
-ARG CLAUDE_CODE_VERSION=2.1.109
+ARG CLAUDE_CODE_VERSION=2.1.114
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
