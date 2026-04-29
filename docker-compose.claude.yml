@@ -19,9 +19,6 @@ services:
       - type: bind
         source: ${CLAUDE_HOME_PATH:-${PWD}/.claude}
         target: /home/devops/.claude
-      - type: bind
-        source: ${CLAUDE_HOME_PATH:-${PWD}/.claude}/.claude.json
-        target: /home/devops/.claude.json
 
 secrets:
   anthropic_api_key:
