@@ -22,7 +22,7 @@ RUN apk add --no-cache curl tar && \
     rm -rf /tmp/helm.tgz /tmp/linux-${HELM_ARCH}
 
 FROM ${CLAUDE_NODE_IMAGE} AS claude-base
-ARG CLAUDE_CODE_VERSION=2.1.109
+ARG CLAUDE_CODE_VERSION=2.1.138
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -57,7 +57,7 @@ RUN chmod +x /usr/local/bin/claude-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/claude-entrypoint.sh"]
 
 FROM ${CODEX_NODE_IMAGE} AS codex-base
-ARG CODEX_VERSION=0.121.0
+ARG CODEX_VERSION=0.130.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bubblewrap \
