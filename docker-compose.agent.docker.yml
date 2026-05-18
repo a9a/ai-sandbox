@@ -12,7 +12,7 @@ services:
     restart: "no"
 
   docker-daemon:
-    image: ${DOCKER_DIND_IMAGE:-docker:27-dind-rootless}
+    image: ${DOCKER_DIND_IMAGE:-docker:28-dind-rootless@sha256:7c3e797187e43738220462658f4586572cbd3bf009f728b21e34d9c5c06ce431}
     privileged: true
     security_opt:
       - seccomp=unconfined
