@@ -14,7 +14,9 @@ load_secret_from_file GITHUB_TOKEN "$GITHUB_TOKEN_FILE"
 # Keep Claude session file inside persisted .claude dir and expose legacy path.
 if [[ "$(id -u)" -eq 0 ]]; then
   mkdir -p /home/devops/.claude
-  touch /home/devops/.claude/.claude.json
+  if [[ ! -s /home/devops/.claude/.claude.json ]]; then
+    echo {} > /home/devops/.claude/.claude.json
+  fi
   ln -sfn /home/devops/.claude/.claude.json /home/devops/.claude.json
   chown -R devops:devops /home/devops/.claude
   chown -h devops:devops /home/devops/.claude.json || true
