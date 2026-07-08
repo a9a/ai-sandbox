@@ -13,14 +13,15 @@ Agent images are built from `Dockerfile.claude`,
 
 ## Build, Test, and Development Commands
 
-Run `make help` to list supported workflows. Common commands:
+Run `just --list` to list supported workflows. `Makefile` mirrors the same
+targets for environments without `just`. Common commands:
 
-- `make claude-build` / `make codex-build`: build the agent images.
-- `make claude-workspace` / `make codex-workspace`: enter a running workspace.
-- `make claude-up-secure` / `make codex-up-secure`: start a stack and apply the
+- `just claude-build` / `just codex-build`: build the agent images.
+- `just claude-workspace` / `just codex-workspace`: enter a running workspace.
+- `just claude-up-secure` / `just codex-up-secure`: start a stack and apply the
   host egress firewall.
-- `make codex-docker-up`: start Codex with the rootless Docker sidecar.
-- `make test`: run both Claude and Codex integration suites.
+- `just codex-docker-up`: start Codex with the rootless Docker sidecar.
+- `just test`: run both Claude and Codex integration suites.
 - `./scripts/test-integration.sh codex`: run one integration suite directly.
 
 ## Coding Style & Naming Conventions
@@ -55,5 +56,5 @@ CI output that clarifies a failure or behavior change.
 Do not commit real secrets. Keep local credentials in shell environment
 variables or files under `secrets/`, which is intended for local secret inputs.
 Review `proxy/allowed-domains.txt` carefully because it defines allowed egress.
-After changing proxy or firewall behavior, run `make test` and verify the
+After changing proxy or firewall behavior, run `just test` and verify the
 secure targets still restrict agent traffic through the proxy.
