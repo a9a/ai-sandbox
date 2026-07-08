@@ -12,7 +12,8 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 - `docker-compose.codex.yml` - Codex agent service.
 - `docker-compose.codex.docker.yml` - Codex profile with sidecar Docker daemon.
 - `Dockerfile.agent` - shared Dockerfile with targets: `claude`, `claude-docker`, `codex`, `codex-docker`.
-- `Makefile` - convenience commands for compose, firewall, and tests.
+- `justfile` - primary task runner for compose, firewall, and tests.
+- `Makefile` - fallback task runner with matching targets.
 - `.env` - pinned versions and image tags.
 - `proxy/squid.conf` - proxy policy (domain allowlist).
 - `proxy/allowed-domains.txt` - destination domain allowlist.
@@ -78,54 +79,40 @@ When set, both agent entrypoints apply these values via `git config --global` fo
 
 If `GITHUB_TOKEN` is present, the entrypoint writes `~/.git-credentials` and configures `credential.helper store` automatically.
 
-## Make Targets
+## Task Runner
 
-Show all targets:
+Use `just` for local workflows:
 
 ```bash
-make help
+just --list
 ```
 
-Most common (Claude):
+Install `just` with your package manager if it is not already available. `Makefile` is still present with matching targets for environments that do not have `just` installed.
+
+Common commands:
 
 ```bash
-make claude-up
-make claude-workspace
-make claude-logs
-make claude-down
+just claude-up
+just claude-workspace
+just claude-logs
+just claude-down
 ```
 
-Claude with Docker-in-Docker sidecar:
+Docker-enabled profiles:
 
 ```bash
-make claude-docker-up
-make claude-docker-workspace
-make claude-docker-logs
-make claude-docker-down
-make claude-docker-up-secure
-make claude-docker-down-secure
+just claude-docker-up
+just claude-docker-workspace
+just codex-docker-up
+just codex-docker-workspace
 ```
 
-Most common (Codex):
+Build and test:
 
 ```bash
-make codex-up
-make codex-workspace
-make codex-logs
-make codex-down
-make codex-up-secure
-make codex-down-secure
-```
-
-Codex with Docker-in-Docker sidecar:
-
-```bash
-make codex-docker-up
-make codex-docker-workspace
-make codex-docker-logs
-make codex-docker-down
-make codex-docker-up-secure
-make codex-docker-down-secure
+just claude-build
+just codex-build
+just test
 ```
 
 Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar (`DOCKER_DIND_IMAGE`, default `docker:27-dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
@@ -141,8 +128,8 @@ Agent project directory (`/home/devops/project`) is mounted from the host.
 For multi-project workspaces, mount a related project group with `AI_HOME_PATH`, enter the workspace, then start the agent from the desired subdirectory:
 
 ```bash
-AI_HOME_PATH=/path/to/workspace make claude-docker-up
-make claude-docker-workspace
+AI_HOME_PATH=/path/to/workspace just claude-docker-up
+just claude-docker-workspace
 cd /home/devops/project/app
 claude
 ```
@@ -198,8 +185,8 @@ Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mo
 ## Build Images
 
 ```bash
-make claude-build
-make codex-build
+just claude-build
+just codex-build
 ```
 
 ## Proxy Allowlist (Domain ACL)
@@ -245,11 +232,11 @@ docker compose -f docker-compose.yml up -d --build proxy
 Apply/remove host firewall:
 
 ```bash
-make firewall-apply-claude
-make firewall-apply-claude-docker
-make firewall-apply-codex
-make firewall-apply-codex-docker
-make firewall-remove
+just firewall-apply-claude
+just firewall-apply-claude-docker
+just firewall-apply-codex
+just firewall-apply-codex-docker
+just firewall-remove
 ```
 
 Scripts require Linux host with `iptables` and running containers.
@@ -259,7 +246,7 @@ Scripts require Linux host with `iptables` and running containers.
 Run both integration suites:
 
 ```bash
-make test
+just test
 ```
 
 Or run one:
