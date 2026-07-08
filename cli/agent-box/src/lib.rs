@@ -96,6 +96,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     }
 
     let cli_no_docker = args.iter().any(|arg| arg == "--no-docker");
+    let rebuild = args.iter().any(|arg| arg == "--build");
     let sandbox_dir = find_sandbox_dir()?;
     let config = load_config(&sandbox_dir)?;
     let docker_enabled = config.defaults.docker && !cli_no_docker;
@@ -109,6 +110,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         &override_path,
         &config.defaults,
         docker_enabled,
+        rebuild,
     )?;
     exec_agent(
         agent,
@@ -121,10 +123,12 @@ fn run_inner(agent: Agent) -> Result<(), String> {
 }
 
 fn print_help(agent: Agent) {
-    println!("Usage: {} [--no-docker]", agent_box_name(agent));
+    println!("Usage: {} [--no-docker] [--build]", agent_box_name(agent));
     println!();
     println!("Reads workspace definitions from box.toml in the sandbox directory.");
     println!("Create one with: cp box.toml.example box.toml");
+    println!("By default, starts existing images with docker compose up -d.");
+    println!("Pass --build to rebuild images before opening the agent.");
 }
 
 fn agent_box_name(agent: Agent) -> &'static str {
@@ -519,6 +523,7 @@ fn start_stack(
     override_path: &Path,
     defaults: &Defaults,
     docker_enabled: bool,
+    rebuild: bool,
 ) -> Result<(), String> {
     let mut command = Command::new("docker");
     command.current_dir(sandbox_dir);
@@ -526,12 +531,10 @@ fn start_stack(
     for file in agent.compose_files(docker_enabled) {
         command.arg("-f").arg(file);
     }
-    command
-        .arg("-f")
-        .arg(override_path)
-        .arg("up")
-        .arg("-d")
-        .arg("--build");
+    command.arg("-f").arg(override_path).arg("up").arg("-d");
+    if rebuild {
+        command.arg("--build");
+    }
     set_home_env(agent, &mut command);
     set_configured_home_env(agent, defaults, &mut command);
     run_command(command)

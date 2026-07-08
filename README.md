@@ -177,9 +177,36 @@ cargo run --manifest-path cli/agent-box/Cargo.toml --bin claude-box
 cargo run --manifest-path cli/agent-box/Cargo.toml --bin codex-box
 ```
 
-The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, starts the matching Docker stack, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack.
+The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, starts the matching Docker stack with existing images, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack or `--build` to rebuild images before opening the agent.
 
 `box.toml` is required. If it is missing, the launcher exits instead of starting an agent from an implicit directory.
+
+For faster daily use, build the host launchers once:
+
+```bash
+cargo build --manifest-path cli/agent-box/Cargo.toml --release
+```
+
+Then run the release binaries directly:
+
+```bash
+./cli/agent-box/target/release/claude-box
+./cli/agent-box/target/release/codex-box
+```
+
+Optional shell aliases:
+
+```bash
+alias claude-box='/path/to/ai-sandbox/cli/agent-box/target/release/claude-box'
+alias codex-box='/path/to/ai-sandbox/cli/agent-box/target/release/codex-box'
+```
+
+Fish aliases:
+
+```fish
+alias claude-box '/path/to/ai-sandbox/cli/agent-box/target/release/claude-box'
+alias codex-box '/path/to/ai-sandbox/cli/agent-box/target/release/codex-box'
+```
 
 Claude home data (`/home/devops/.claude`) is persisted via host bind mount.
 The entrypoint auto-creates `/home/devops/.claude/.claude.json` and links `/home/devops/.claude.json` to it.
@@ -198,6 +225,8 @@ Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mo
 just claude-build
 just codex-build
 ```
+
+The Rust launchers do not rebuild images by default. Rebuild explicitly with the targets above or pass `--build` to `claude-box` / `codex-box`.
 
 ## Proxy Allowlist (Domain ACL)
 
