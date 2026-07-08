@@ -118,6 +118,16 @@ just test
 Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar (`DOCKER_DIND_IMAGE`, default `docker:27-dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
 Both Docker-enabled agent images install `docker`, `docker compose`, and `helm` from one shared tooling stage in `Dockerfile.agent`.
 On Docker Desktop and other nested-container environments, `docker-daemon` runs with `privileged: true` so inner containers can mount `/proc` and start correctly.
+Services published by inner Docker containers are reachable from agent containers at `http://docker-daemon:<port>`.
+
+Example from a Docker-enabled agent workspace:
+
+```bash
+docker run -d --name nginx-proxy -p 8080:80 nginx:1.27-alpine
+curl http://docker-daemon:8080
+```
+
+Use `docker-daemon`, not `localhost`, from the agent container. `localhost` refers to the agent container itself.
 
 Agent project directory (`/home/devops/project`) is mounted from the host.
 
