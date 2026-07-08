@@ -2,3 +2,7 @@ secrets/*.txt
 !secrets/*.example
 !secrets/.gitkeep
 .codex
+.tmp/
+box.toml
+target/
+cli/agent-box/target/

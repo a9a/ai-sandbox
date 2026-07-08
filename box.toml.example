@@ -1,0 +1,26 @@
+[defaults]
+claude_home = "/path/to/claude-home"
+codex_home = "/path/to/codex-home"
+docker = true
+
+[[workspaces]]
+name = "workspace-a"
+
+[[workspaces.mounts]]
+name = "service-a"
+host = "/path/to/workspace-a/service-a"
+
+[[workspaces.mounts]]
+name = "service-b"
+host = "/path/to/workspace-a/service-b"
+
+[[workspaces]]
+name = "workspace-b"
+
+[[workspaces.mounts]]
+name = "service-c"
+host = "/path/to/workspace-b/service-c"
+
+[[workspaces.mounts]]
+name = "service-d"
+host = "/path/to/workspace-b/service-d"

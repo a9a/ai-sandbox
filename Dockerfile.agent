@@ -57,7 +57,7 @@ RUN chmod +x /usr/local/bin/claude-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/claude-entrypoint.sh"]
 
 FROM ${CODEX_NODE_IMAGE} AS codex-base
-ARG CODEX_VERSION=0.135.0
+ARG CODEX_VERSION=0.143.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bubblewrap \

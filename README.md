@@ -31,7 +31,7 @@ Edit `.env`:
 CLAUDE_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
 CODEX_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
 CLAUDE_CODE_VERSION=2.1.109
-CODEX_VERSION=0.135.0
+CODEX_VERSION=0.143.0
 CLAUDE_IMAGE_NAME=ai-sandbox-claude-agent:local
 CLAUDE_DOCKER_IMAGE_NAME=ai-sandbox-claude-agent-docker:local
 CODEX_IMAGE_NAME=ai-sandbox-codex-agent:local
@@ -146,6 +146,43 @@ make claude-docker-workspace
 cd /home/devops/project/app
 claude
 ```
+
+For a host-side launcher, configure thematic workspaces in `box.toml`:
+
+```bash
+cp box.toml.example box.toml
+```
+
+Example:
+
+```toml
+[defaults]
+claude_home = "/Users/aga/.claude"
+codex_home = "/Users/aga/.codex"
+docker = true
+
+[[workspaces]]
+name = "product-x"
+
+[[workspaces.mounts]]
+name = "app"
+host = "/Users/aga/dev/product-x-app"
+
+[[workspaces.mounts]]
+name = "api"
+host = "/Users/aga/repos/product-x-api"
+```
+
+Then run one of the Rust launchers from the host:
+
+```bash
+cargo run --manifest-path cli/agent-box/Cargo.toml --bin claude-box
+cargo run --manifest-path cli/agent-box/Cargo.toml --bin codex-box
+```
+
+The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, starts the matching Docker stack, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack.
+
+`box.toml` is required. If it is missing, the launcher exits instead of starting an agent from an implicit directory.
 
 Claude home data (`/home/devops/.claude`) is persisted via host bind mount.
 The entrypoint auto-creates `/home/devops/.claude/.claude.json` and links `/home/devops/.claude.json` to it.
