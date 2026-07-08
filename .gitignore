@@ -1,3 +1,4 @@
 secrets/*.txt
 !secrets/*.example
 !secrets/.gitkeep
+.codex

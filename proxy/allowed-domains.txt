@@ -12,6 +12,9 @@ index.docker.io
 registry.docker.io
 registry-1.docker.io
 production.cloudflare.docker.com
+production.cloudfront.docker.com
 .r2.cloudflarestorage.com
 hub.docker.com
 github.com
+ghcr.io
+pkg-containers.githubusercontent.com
