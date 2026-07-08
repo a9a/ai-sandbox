@@ -33,6 +33,15 @@ jobs:
       - name: Shellcheck
         run: shellcheck -e SC1091 build.sh build-codex.sh scripts/*.sh
 
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+
+      - name: Rust format check
+        run: cargo fmt --manifest-path cli/agent-box/Cargo.toml --check
+
+      - name: Rust check
+        run: cargo check --manifest-path cli/agent-box/Cargo.toml --locked
+
       - name: Validate compose config
         run: |
           docker compose -f docker-compose.yml config >/dev/null
