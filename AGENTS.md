@@ -16,10 +16,10 @@ Agent images are built from `Dockerfile.claude`,
 Run `make help` to list supported workflows. Common commands:
 
 - `make claude-build` / `make codex-build`: build the agent images.
+- `make claude-workspace` / `make codex-workspace`: enter a running workspace.
 - `make claude-up-secure` / `make codex-up-secure`: start a stack and apply the
   host egress firewall.
 - `make codex-docker-up`: start Codex with the rootless Docker sidecar.
-- `make claude-shell` / `make codex-shell`: attach to a running agent container.
 - `make test`: run both Claude and Codex integration suites.
 - `./scripts/test-integration.sh codex`: run one integration suite directly.
 

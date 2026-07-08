@@ -31,7 +31,7 @@ Edit `.env`:
 CLAUDE_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
 CODEX_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
 CLAUDE_CODE_VERSION=2.1.109
-CODEX_VERSION=0.121.0
+CODEX_VERSION=0.143.0
 CLAUDE_IMAGE_NAME=ai-sandbox-claude-agent:local
 CLAUDE_DOCKER_IMAGE_NAME=ai-sandbox-claude-agent-docker:local
 CODEX_IMAGE_NAME=ai-sandbox-codex-agent:local
@@ -89,18 +89,19 @@ make help
 Most common (Claude):
 
 ```bash
-make claude-up-secure
-make claude-shell
-make claude-new
-make claude-down-secure
+make claude-up
+make claude-workspace
+make claude-logs
+make claude-down
 ```
 
 Claude with Docker-in-Docker sidecar:
 
 ```bash
 make claude-docker-up
-make claude-docker-shell
-make claude-docker-new
+make claude-docker-workspace
+make claude-docker-logs
+make claude-docker-down
 make claude-docker-up-secure
 make claude-docker-down-secure
 ```
@@ -109,8 +110,9 @@ Most common (Codex):
 
 ```bash
 make codex-up
-make codex-shell
-make codex-new
+make codex-workspace
+make codex-logs
+make codex-down
 make codex-up-secure
 make codex-down-secure
 ```
@@ -119,8 +121,9 @@ Codex with Docker-in-Docker sidecar:
 
 ```bash
 make codex-docker-up
-make codex-docker-shell
-make codex-docker-new
+make codex-docker-workspace
+make codex-docker-logs
+make codex-docker-down
 make codex-docker-up-secure
 make codex-docker-down-secure
 ```
@@ -129,13 +132,57 @@ Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar (`DOCK
 Both Docker-enabled agent images install `docker`, `docker compose`, and `helm` from one shared tooling stage in `Dockerfile.agent`.
 On Docker Desktop and other nested-container environments, `docker-daemon` runs with `privileged: true` so inner containers can mount `/proc` and start correctly.
 
-Backward-compatible aliases (`up`, `shell`, `down-secure`) default to Claude.
-
 Agent project directory (`/home/devops/project`) is mounted from the host.
 
 - Default path is `.` (where `docker compose` is started).
-- Optional: set `AI_HOME_PATH` in `.env` (example: `/path/to/project`) to override.
+- Optional: set `AI_HOME_PATH` in `.env` (example: `/path/to/workspace`) to override.
 - In `claude-docker` and `codex-docker` profiles, the same path is mounted into `docker-daemon` so bind mounts work via remote `DOCKER_HOST`.
+
+For multi-project workspaces, mount a related project group with `AI_HOME_PATH`, enter the workspace, then start the agent from the desired subdirectory:
+
+```bash
+AI_HOME_PATH=/path/to/workspace make claude-docker-up
+make claude-docker-workspace
+cd /home/devops/project/app
+claude
+```
+
+For a host-side launcher, configure thematic workspaces in `box.toml`:
+
+```bash
+cp box.toml.example box.toml
+```
+
+Example:
+
+```toml
+[defaults]
+claude_home = "/Users/aga/.claude"
+codex_home = "/Users/aga/.codex"
+docker = true
+
+[[workspaces]]
+name = "product-x"
+
+[[workspaces.mounts]]
+name = "app"
+host = "/Users/aga/dev/product-x-app"
+
+[[workspaces.mounts]]
+name = "api"
+host = "/Users/aga/repos/product-x-api"
+```
+
+Then run one of the Rust launchers from the host:
+
+```bash
+cargo run --manifest-path cli/agent-box/Cargo.toml --bin claude-box
+cargo run --manifest-path cli/agent-box/Cargo.toml --bin codex-box
+```
+
+The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, starts the matching Docker stack, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack.
+
+`box.toml` is required. If it is missing, the launcher exits instead of starting an agent from an implicit directory.
 
 Claude home data (`/home/devops/.claude`) is persisted via host bind mount.
 The entrypoint auto-creates `/home/devops/.claude/.claude.json` and links `/home/devops/.claude.json` to it.
@@ -173,8 +220,12 @@ index.docker.io
 registry.docker.io
 registry-1.docker.io
 production.cloudflare.docker.com
+production.cloudfront.docker.com
 .r2.cloudflarestorage.com
 hub.docker.com
+github.com
+ghcr.io
+pkg-containers.githubusercontent.com
 ```
 
 After changes:

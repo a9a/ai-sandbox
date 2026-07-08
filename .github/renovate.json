@@ -17,6 +17,7 @@
     "github-actions",
     "dockerfile",
     "docker-compose",
+    "cargo",
     "custom.regex"
   ],
   "packageRules": [
@@ -35,7 +36,8 @@
     {
       "matchDatasources": [
         "docker",
-        "npm"
+        "npm",
+        "crate"
       ],
       "matchUpdateTypes": [
         "minor",
