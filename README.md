@@ -28,8 +28,8 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 Edit `.env`:
 
 ```env
-CLAUDE_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
-CODEX_NODE_IMAGE=node:24-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c
+CLAUDE_NODE_IMAGE=node:24-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+CODEX_NODE_IMAGE=node:24-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
 CLAUDE_CODE_VERSION=2.1.109
 CODEX_VERSION=0.143.0
 CLAUDE_IMAGE_NAME=ai-sandbox-claude-agent:local
