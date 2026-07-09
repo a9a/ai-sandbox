@@ -1,12 +1,17 @@
 name: Security Scan
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   schedule:
     - cron: "25 3 * * *"
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TRIVY_SEVERITY: ${{ github.event_name == 'schedule' && 'CRITICAL' || 'HIGH,CRITICAL' }}
 
 jobs:
   trivy:
@@ -49,7 +54,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
-          severity: CRITICAL
+          severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: "1"
           format: table
@@ -59,7 +64,7 @@ jobs:
         with:
           scan-type: image
           image-ref: ai-sandbox-claude-agent:security
-          severity: CRITICAL
+          severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: "1"
           format: table
@@ -69,7 +74,7 @@ jobs:
         with:
           scan-type: image
           image-ref: ai-sandbox-codex-agent:security
-          severity: CRITICAL
+          severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: "1"
           format: table
@@ -79,7 +84,7 @@ jobs:
         with:
           scan-type: image
           image-ref: ai-sandbox-proxy:security
-          severity: CRITICAL
+          severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: "1"
           format: table
@@ -89,7 +94,7 @@ jobs:
         with:
           scan-type: image
           image-ref: ai-sandbox-claude-agent-docker:security
-          severity: CRITICAL
+          severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: "1"
           format: table
@@ -99,7 +104,7 @@ jobs:
         with:
           scan-type: image
           image-ref: ai-sandbox-codex-agent-docker:security
-          severity: CRITICAL
+          severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: "1"
           format: table
