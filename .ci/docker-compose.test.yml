@@ -4,7 +4,7 @@ services:
       - ./.ci/allowed-domains.test.txt:/etc/squid/allowed-domains.txt:ro
 
   tester:
-    image: curlimages/curl:8.19.0@sha256:c03110c736db81bbe1be0296f1f1608c81b954b01626bdfb0a8f84e5bd00ff3c
+    image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
     command: ["sleep", "infinity"]
     depends_on:
       - proxy
