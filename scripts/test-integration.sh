@@ -44,6 +44,17 @@ fail() {
   exit 1
 }
 
+wait_for_proxy() {
+  for _ in $(seq 1 30); do
+    if compose exec -T tester sh -lc "curl -fsS -o /dev/null -x http://proxy:3128 http://mock-upstream/"; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
 cleanup() {
   docker rm -f "$INSPECT_CONTAINER" >/dev/null 2>&1 || true
   compose down -v --remove-orphans >/dev/null 2>&1 || true
@@ -60,17 +71,14 @@ fi
 
 compose up -d --build proxy mock-upstream blocked-upstream tester
 
-allowed_ready=0
-for _ in $(seq 1 30); do
-  if compose exec -T tester sh -lc "curl -fsS -o /dev/null -x http://proxy:3128 http://mock-upstream/"; then
-    allowed_ready=1
-    break
-  fi
-  sleep 1
-done
-
-if [[ "$allowed_ready" -ne 1 ]]; then
+if ! wait_for_proxy; then
   fail "proxy did not become ready in time"
+fi
+
+compose restart proxy
+if ! wait_for_proxy; then
+  compose logs proxy >&2
+  fail "proxy did not recover after container restart"
 fi
 
 allowed_response="$(compose exec -T tester sh -lc "curl -fsS -x http://proxy:3128 http://mock-upstream/")"

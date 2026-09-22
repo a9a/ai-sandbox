@@ -31,7 +31,7 @@ services:
       dockerfile: Dockerfile
     container_name: ai-sandbox-proxy
     healthcheck:
-      test: ["CMD-SHELL", "test -s /run/squid.pid && kill -0 \"$(cat /run/squid.pid)\""]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "3128"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -39,6 +39,8 @@ services:
     networks:
       - agent_net
       - egress_net
+    tmpfs:
+      - /run
     restart: unless-stopped
 
   claude-agent:
