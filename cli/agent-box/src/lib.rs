@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -65,8 +67,8 @@ impl Agent {
     fn default_home(self) -> Option<PathBuf> {
         let home = env::var_os("HOME").map(PathBuf::from)?;
         Some(match self {
-            Agent::Claude => home.join(".claude"),
-            Agent::Codex => home.join(".codex"),
+            Agent::Claude => home.join(".ai-sandbox").join("claude"),
+            Agent::Codex => home.join(".ai-sandbox").join("codex"),
         })
     }
 
@@ -140,6 +142,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     let rebuild = args.iter().any(|arg| arg == "--build");
     let sandbox_dir = find_sandbox_dir()?;
     let config = load_config(&sandbox_dir)?;
+    ensure_agent_home(agent, &config.defaults)?;
     let docker_enabled = config.defaults.docker && !cli_no_docker;
     let workspace = choose_workspace(&config.workspaces)?;
     let mount = choose_mount(workspace)?;
@@ -636,6 +639,41 @@ fn agent_home(agent: Agent, defaults: &Defaults) -> Option<PathBuf> {
     .or_else(|| agent.default_home())
 }
 
+fn ensure_agent_home(agent: Agent, defaults: &Defaults) -> Result<(), String> {
+    let path = agent_home(agent, defaults)
+        .ok_or_else(|| format!("cannot determine {}; HOME is not set", agent.home_env()))?;
+    let existed = path.exists();
+    fs::create_dir_all(&path)
+        .map_err(|error| format!("cannot create {}: {error}", path.display()))?;
+
+    #[cfg(unix)]
+    {
+        let uses_isolated_default = configured_agent_home(agent, defaults).is_none();
+        if uses_isolated_default {
+            if let Some(root) = path.parent() {
+                fs::set_permissions(root, fs::Permissions::from_mode(0o700))
+                    .map_err(|error| format!("cannot secure {}: {error}", root.display()))?;
+            }
+        }
+        if uses_isolated_default || !existed {
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+                .map_err(|error| format!("cannot secure {}: {error}", path.display()))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn configured_agent_home(agent: Agent, defaults: &Defaults) -> Option<PathBuf> {
+    if let Some(path) = env::var_os(agent.home_env()) {
+        return Some(PathBuf::from(path));
+    }
+    match agent {
+        Agent::Claude => defaults.claude_home.clone(),
+        Agent::Codex => defaults.codex_home.clone(),
+    }
+}
+
 fn write_service_mounts(contents: &mut String, service: &str, mounts: &[Mount]) {
     contents.push_str(&format!("  {service}:\n"));
     contents.push_str("    volumes:\n");
@@ -803,8 +841,7 @@ fn start_stack(
         command.arg("--build");
     }
     command.arg(agent.service());
-    set_home_env(agent, &mut command);
-    set_configured_home_env(agent, defaults, &mut command);
+    set_agent_home_env(agent, defaults, &mut command);
     set_runtime_env(agent, project_name, docker_enabled, &mut command);
     run_command(command)
 }
@@ -837,8 +874,7 @@ fn exec_agent(
         .arg(agent.service())
         .arg(agent.entrypoint())
         .arg(agent.command());
-    set_home_env(agent, &mut command);
-    set_configured_home_env(agent, defaults, &mut command);
+    set_agent_home_env(agent, defaults, &mut command);
     set_runtime_env(agent, project_name, docker_enabled, &mut command);
     run_command(command)
 }
@@ -847,25 +883,8 @@ fn container_context(mount_name: &str) -> String {
     format!("/home/devops/project/{}", yaml_segment(mount_name))
 }
 
-fn set_home_env(agent: Agent, command: &mut Command) {
-    if env::var_os(agent.home_env()).is_some() {
-        return;
-    }
-    if let Some(default_home) = agent.default_home() {
-        command.env(agent.home_env(), default_home);
-    }
-}
-
-fn set_configured_home_env(agent: Agent, defaults: &Defaults, command: &mut Command) {
-    if env::var_os(agent.home_env()).is_some() {
-        return;
-    }
-
-    let configured = match agent {
-        Agent::Claude => defaults.claude_home.as_ref(),
-        Agent::Codex => defaults.codex_home.as_ref(),
-    };
-    if let Some(path) = configured {
+fn set_agent_home_env(agent: Agent, defaults: &Defaults, command: &mut Command) {
+    if let Some(path) = agent_home(agent, defaults) {
         command.env(agent.home_env(), path);
     }
 }

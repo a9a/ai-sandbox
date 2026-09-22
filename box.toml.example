@@ -1,7 +1,10 @@
 [defaults]
-claude_home = "/path/to/claude-home"
-codex_home = "/path/to/codex-home"
 docker = true
+
+# Optional opt-in to existing host configuration. Defaults are isolated under
+# ~/.ai-sandbox/claude and ~/.ai-sandbox/codex.
+# claude_home = "/path/to/claude-home"
+# codex_home = "/path/to/codex-home"
 
 [[workspaces]]
 name = "workspace-a"
