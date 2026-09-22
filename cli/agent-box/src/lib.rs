@@ -141,7 +141,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     let cli_no_docker = args.iter().any(|arg| arg == "--no-docker");
     let rebuild = args.iter().any(|arg| arg == "--build");
     let sandbox_dir = find_sandbox_dir()?;
-    let config = load_config(&sandbox_dir)?;
+    let config = load_config()?;
     ensure_agent_home(agent, &config.defaults)?;
     let docker_enabled = config.defaults.docker && !cli_no_docker;
     let workspace = choose_workspace(&config.workspaces)?;
@@ -185,8 +185,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
 fn print_help(agent: Agent) {
     println!("Usage: {} [--no-docker] [--build]", agent_box_name(agent));
     println!();
-    println!("Reads workspace definitions from box.toml in the sandbox directory.");
-    println!("Create one with: cp box.toml.example box.toml");
+    println!("Reads workspace definitions from ~/.config/ai-sandbox/box.toml by default.");
     println!("By default, starts existing images with docker compose up -d.");
     println!("Pass --build to rebuild images before opening the agent.");
 }
@@ -216,16 +215,15 @@ fn find_sandbox_dir() -> Result<PathBuf, String> {
     Err("run from ai-sandbox or set AI_SANDBOX_DIR".to_string())
 }
 
-fn load_config(sandbox_dir: &Path) -> Result<Config, String> {
-    let config_path = sandbox_dir.join("box.toml");
-    if !config_path.exists() {
-        return Err(format!(
-            "{} not found; create it with: cp box.toml.example box.toml",
-            config_path.display()
-        ));
-    }
-
-    let contents = fs::read_to_string(&config_path).map_err(|error| error.to_string())?;
+fn load_config() -> Result<Config, String> {
+    let config_path = env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| home.join(".config").join("ai-sandbox").join("box.toml"))
+        .ok_or_else(|| {
+            "cannot locate ~/.config/ai-sandbox/box.toml; HOME is not set".to_string()
+        })?;
+    let contents = fs::read_to_string(&config_path)
+        .map_err(|error| format!("cannot read {}: {error}", config_path.display()))?;
     parse_config(&config_path, &contents)
 }
 
