@@ -155,6 +155,7 @@ docker = true
 
 [[workspaces]]
 name = "product-x"
+docker_ports = "18000-18099"
 
 [[workspaces.mounts]]
 name = "app"
@@ -175,6 +176,10 @@ cargo run --manifest-path cli/agent-box/Cargo.toml --bin codex-box
 The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack or `--build` to rebuild images before opening the agent.
 
 Launcher runtimes are scoped by workspace. Each workspace gets persistent agent containers and, when Docker is enabled, its own rootless Docker daemon and Docker data volumes. Reopening the same workspace starts another `exec` session in the existing agent container; opening a different workspace leaves previous containers and sessions running. All workspace runtimes share the single `ai-sandbox-proxy` service and its egress policy.
+
+Optional `docker_ports` publishes the same port range from a workspace DinD daemon to host loopback. Ranges must use unprivileged ports and cannot overlap between workspaces. For example, `docker_ports = "18000-18099"` makes an inner `docker run -p 18080:80 ...` service available at `http://localhost:18080` without exposing it beyond the host.
+
+For workspaces with `docker_ports`, the launcher sets `SANDBOX_DOCKER_PORT_RANGE` in the agent and adds runtime guidance from `instructions/docker-ports.md` to the agent's global instruction file. Existing `~/.codex/AGENTS.md` or `~/.claude/CLAUDE.md` content is preserved in the generated file, and the host file is not modified. The generated instruction applies to every mounted project opened in that workspace runtime. Extend the Markdown template to add shared runtime guidance; `{{docker_port_range}}` and `{{example_port}}` are replaced by the launcher.
 
 The generated agent container runs an idle keepalive process. Every interactive Claude/Codex session is started through the matching entrypoint so secrets are loaded from Docker secret files for that session.
 

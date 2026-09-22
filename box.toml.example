@@ -5,6 +5,7 @@ docker = true
 
 [[workspaces]]
 name = "workspace-a"
+docker_ports = "18000-18099"
 
 [[workspaces.mounts]]
 name = "service-a"
@@ -16,6 +17,7 @@ host = "/path/to/workspace-a/service-b"
 
 [[workspaces]]
 name = "workspace-b"
+docker_ports = "18100-18199"
 
 [[workspaces.mounts]]
 name = "service-c"
