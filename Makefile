@@ -1,9 +1,10 @@
 COMPOSE_BASE := docker compose -f docker-compose.yml
-COMPOSE_CLAUDE := $(COMPOSE_BASE) -f docker-compose.claude.yml
-COMPOSE_CLAUDE_DOCKER := $(COMPOSE_CLAUDE) -f docker-compose.agent.docker.yml -f docker-compose.claude.docker.yml
-COMPOSE_CODEX := $(COMPOSE_BASE) -f docker-compose.codex.yml
-COMPOSE_CODEX_DOCKER := $(COMPOSE_CODEX) -f docker-compose.agent.docker.yml -f docker-compose.codex.docker.yml
-COMPOSE_ALL := $(COMPOSE_BASE) -f docker-compose.claude.yml -f docker-compose.codex.yml
+COMPOSE_DOCKER := $(COMPOSE_BASE) -f docker-compose.docker.yml
+COMPOSE_CLAUDE := $(COMPOSE_BASE) --profile claude
+COMPOSE_CLAUDE_DOCKER := $(COMPOSE_DOCKER) --profile claude
+COMPOSE_CODEX := $(COMPOSE_BASE) --profile codex
+COMPOSE_CODEX_DOCKER := $(COMPOSE_DOCKER) --profile codex
+COMPOSE_ALL := $(COMPOSE_DOCKER) --profile claude --profile codex
 
 .PHONY: help \
 	claude-build codex-build claude-up claude-down claude-up-secure claude-down-secure claude-workspace claude-logs \
@@ -47,7 +48,7 @@ codex-build:
 	./build-codex.sh
 
 claude-up:
-	$(COMPOSE_CLAUDE) up -d --build
+	$(COMPOSE_CLAUDE) up -d --build claude-agent
 
 claude-down:
 	$(COMPOSE_CLAUDE) down
@@ -65,7 +66,7 @@ claude-logs:
 	$(COMPOSE_CLAUDE) logs -f proxy claude-agent
 
 claude-docker-up:
-	$(COMPOSE_CLAUDE_DOCKER) up -d --build
+	$(COMPOSE_CLAUDE_DOCKER) up -d --build claude-agent
 
 claude-docker-down:
 	$(COMPOSE_CLAUDE_DOCKER) down
@@ -83,7 +84,7 @@ claude-docker-logs:
 	$(COMPOSE_CLAUDE_DOCKER) logs -f proxy docker-daemon claude-agent
 
 codex-up:
-	$(COMPOSE_CODEX) up -d --build
+	$(COMPOSE_CODEX) up -d --build codex-agent
 
 codex-down:
 	$(COMPOSE_CODEX) down
@@ -101,7 +102,7 @@ codex-logs:
 	$(COMPOSE_CODEX) logs -f proxy codex-agent
 
 codex-docker-up:
-	$(COMPOSE_CODEX_DOCKER) up -d --build
+	$(COMPOSE_CODEX_DOCKER) up -d --build codex-agent
 
 codex-docker-down:
 	$(COMPOSE_CODEX_DOCKER) down
@@ -143,6 +144,4 @@ test-codex:
 
 down-all:
 	-$(MAKE) firewall-remove
-	-$(COMPOSE_CLAUDE_DOCKER) down
-	-$(COMPOSE_CODEX_DOCKER) down
 	$(COMPOSE_ALL) down

@@ -3,9 +3,9 @@
 ## Project Structure & Module Organization
 
 This repository defines a Docker sandbox for AI coding agents. Top-level
-Compose files define the stacks: `docker-compose.yml` is the shared base,
-`docker-compose.claude.yml` and `docker-compose.codex.yml` add agent services,
-and `docker-compose.codex.docker.yml` enables the Docker sidecar profile.
+Compose files define the stacks: `docker-compose.yml` contains the proxy and
+Claude/Codex services, while `docker-compose.docker.yml` enables the Docker
+sidecar profile.
 Agent images are built from `Dockerfile.claude`,
 `Dockerfile.codex`, and `Dockerfile.codex.docker`. Proxy policy lives in
 `proxy/`, operational scripts live in `scripts/`, and CI definitions live in

@@ -1,11 +1,12 @@
 set dotenv-load := true
 
 compose_base := "docker compose -f docker-compose.yml"
-compose_claude := compose_base + " -f docker-compose.claude.yml"
-compose_claude_docker := compose_claude + " -f docker-compose.agent.docker.yml -f docker-compose.claude.docker.yml"
-compose_codex := compose_base + " -f docker-compose.codex.yml"
-compose_codex_docker := compose_codex + " -f docker-compose.agent.docker.yml -f docker-compose.codex.docker.yml"
-compose_all := compose_base + " -f docker-compose.claude.yml -f docker-compose.codex.yml"
+compose_docker := compose_base + " -f docker-compose.docker.yml"
+compose_claude := compose_base + " --profile claude"
+compose_claude_docker := compose_docker + " --profile claude"
+compose_codex := compose_base + " --profile codex"
+compose_codex_docker := compose_docker + " --profile codex"
+compose_all := compose_docker + " --profile claude --profile codex"
 
 default:
     @just --list
@@ -17,7 +18,7 @@ codex-build:
     ./build-codex.sh
 
 claude-up:
-    {{compose_claude}} up -d --build
+    {{compose_claude}} up -d --build claude-agent
 
 claude-down:
     {{compose_claude}} down
@@ -35,7 +36,7 @@ claude-logs:
     {{compose_claude}} logs -f proxy claude-agent
 
 claude-docker-up:
-    {{compose_claude_docker}} up -d --build
+    {{compose_claude_docker}} up -d --build claude-agent
 
 claude-docker-down:
     {{compose_claude_docker}} down
@@ -53,7 +54,7 @@ claude-docker-logs:
     {{compose_claude_docker}} logs -f proxy docker-daemon claude-agent
 
 codex-up:
-    {{compose_codex}} up -d --build
+    {{compose_codex}} up -d --build codex-agent
 
 codex-down:
     {{compose_codex}} down
@@ -71,7 +72,7 @@ codex-logs:
     {{compose_codex}} logs -f proxy codex-agent
 
 codex-docker-up:
-    {{compose_codex_docker}} up -d --build
+    {{compose_codex_docker}} up -d --build codex-agent
 
 codex-docker-down:
     {{compose_codex_docker}} down
@@ -115,6 +116,4 @@ test-codex:
 
 down-all:
     -./scripts/remove-egress-firewall.sh
-    -{{compose_claude_docker}} down
-    -{{compose_codex_docker}} down
     {{compose_all}} down

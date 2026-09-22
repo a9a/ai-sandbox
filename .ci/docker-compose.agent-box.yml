@@ -1,0 +1,18 @@
+services:
+  claude-agent:
+    depends_on: !override
+      docker-daemon:
+        condition: service_healthy
+  codex-agent:
+    depends_on: !override
+      docker-daemon:
+        condition: service_healthy
+  docker-daemon:
+    depends_on: !override
+      docker-daemon-init:
+        condition: service_completed_successfully
+
+networks:
+  agent_net: !override
+    external: true
+    name: ai-sandbox_agent_net
