@@ -4,13 +4,8 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 
 ## Files
 
-- `docker-compose.yml` - shared base stack (proxy + networks).
-- `docker-compose.agent.yml` - shared agent service base used by Claude/Codex via `extends`.
-- `docker-compose.agent.docker.yml` - shared Docker sidecar (`dind-rootless`) for Docker-enabled profiles.
-- `docker-compose.claude.yml` - Claude agent service.
-- `docker-compose.claude.docker.yml` - Claude profile with sidecar Docker daemon.
-- `docker-compose.codex.yml` - Codex agent service.
-- `docker-compose.codex.docker.yml` - Codex profile with sidecar Docker daemon.
+- `docker-compose.yml` - shared proxy, networks, secrets, and Claude/Codex services.
+- `docker-compose.docker.yml` - rootless Docker sidecar overlay for both agents.
 - `Dockerfile.agent` - shared Dockerfile with targets: `claude`, `claude-docker`, `codex`, `codex-docker`.
 - `justfile` - primary task runner for compose, firewall, and tests.
 - `Makefile` - fallback task runner with matching targets.
@@ -177,7 +172,11 @@ cargo run --manifest-path cli/agent-box/Cargo.toml --bin claude-box
 cargo run --manifest-path cli/agent-box/Cargo.toml --bin codex-box
 ```
 
-The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, starts the matching Docker stack with existing images, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack or `--build` to rebuild images before opening the agent.
+The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack or `--build` to rebuild images before opening the agent.
+
+Launcher runtimes are scoped by workspace. Each workspace gets persistent agent containers and, when Docker is enabled, its own rootless Docker daemon and Docker data volumes. Reopening the same workspace starts another `exec` session in the existing agent container; opening a different workspace leaves previous containers and sessions running. All workspace runtimes share the single `ai-sandbox-proxy` service and its egress policy.
+
+The generated agent container runs an idle keepalive process. Every interactive Claude/Codex session is started through the matching entrypoint so secrets are loaded from Docker secret files for that session.
 
 `box.toml` is required. If it is missing, the launcher exits instead of starting an agent from an implicit directory.
 

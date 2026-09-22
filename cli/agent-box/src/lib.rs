@@ -1,4 +1,5 @@
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,6 +33,20 @@ impl Agent {
         }
     }
 
+    fn container_name_env(self) -> &'static str {
+        match self {
+            Agent::Claude => "CLAUDE_CONTAINER_NAME",
+            Agent::Codex => "CODEX_CONTAINER_NAME",
+        }
+    }
+
+    fn entrypoint(self) -> &'static str {
+        match self {
+            Agent::Claude => "/usr/local/bin/claude-entrypoint.sh",
+            Agent::Codex => "/usr/local/bin/codex-entrypoint.sh",
+        }
+    }
+
     fn default_home(self) -> Option<PathBuf> {
         let home = env::var_os("HOME").map(PathBuf::from)?;
         Some(match self {
@@ -42,16 +57,8 @@ impl Agent {
 
     fn compose_files(self, docker_enabled: bool) -> Vec<&'static str> {
         let mut files = vec!["docker-compose.yml"];
-        match self {
-            Agent::Claude => files.push("docker-compose.claude.yml"),
-            Agent::Codex => files.push("docker-compose.codex.yml"),
-        }
         if docker_enabled {
-            files.push("docker-compose.agent.docker.yml");
-            match self {
-                Agent::Claude => files.push("docker-compose.claude.docker.yml"),
-                Agent::Codex => files.push("docker-compose.codex.docker.yml"),
-            }
+            files.push("docker-compose.docker.yml");
         }
         files
     }
@@ -102,13 +109,16 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     let docker_enabled = config.defaults.docker && !cli_no_docker;
     let workspace = choose_workspace(&config.workspaces)?;
     let mount = choose_mount(workspace)?;
+    let project_name = runtime_project_name(workspace, docker_enabled);
     let override_path = write_compose_override(agent, &sandbox_dir, workspace, docker_enabled)?;
 
+    start_shared_proxy(&sandbox_dir, rebuild)?;
     start_stack(
         agent,
         &sandbox_dir,
         &override_path,
         &config.defaults,
+        &project_name,
         docker_enabled,
         rebuild,
     )?;
@@ -117,6 +127,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         &sandbox_dir,
         &override_path,
         &config.defaults,
+        &project_name,
         mount,
         docker_enabled,
     )
@@ -294,11 +305,22 @@ fn parse_config(config_path: &Path, contents: &str) -> Result<Config, String> {
         ));
     }
 
+    let mut runtime_names = HashMap::new();
     for workspace in &workspaces {
         if workspace.name.is_empty() {
             return Err(format!(
                 "{}: workspace name is required",
                 config_path.display()
+            ));
+        }
+        let runtime_name = sanitize_name(&workspace.name).to_ascii_lowercase();
+        if let Some(existing_name) = runtime_names.insert(runtime_name.clone(), &workspace.name) {
+            return Err(format!(
+                "{}: workspace names '{}' and '{}' normalize to the same runtime name '{}'",
+                config_path.display(),
+                existing_name,
+                workspace.name,
+                runtime_name
             ));
         }
         if workspace.mounts.is_empty() {
@@ -394,9 +416,21 @@ fn write_compose_override(
 
     let mut contents = String::from("services:\n");
     write_service_mounts(&mut contents, agent.service(), &workspace.mounts);
+    contents.push_str("    command: [\"sleep\", \"infinity\"]\n");
     if docker_enabled {
+        contents.push_str(
+            "    depends_on: !override\n      docker-daemon:\n        condition: service_healthy\n",
+        );
         write_service_mounts(&mut contents, "docker-daemon", &workspace.mounts);
+        contents.push_str(
+            "    depends_on: !override\n      docker-daemon-init:\n        condition: service_completed_successfully\n",
+        );
+    } else {
+        contents.push_str("    depends_on: !reset {}\n");
     }
+    contents.push_str(
+        "networks:\n  agent_net: !override\n    external: true\n    name: ai-sandbox_agent_net\n",
+    );
 
     fs::write(&output_path, contents).map_err(|error| error.to_string())?;
     Ok(output_path)
@@ -424,6 +458,35 @@ fn sanitize_name(name: &str) -> String {
             }
         })
         .collect()
+}
+
+fn runtime_project_name(workspace: &Workspace, docker_enabled: bool) -> String {
+    let workspace_name = sanitize_name(&workspace.name).to_ascii_lowercase();
+    let mode = if docker_enabled { "docker" } else { "plain" };
+    format!("agent-box-{workspace_name}-{mode}")
+}
+
+fn start_shared_proxy(sandbox_dir: &Path, rebuild: bool) -> Result<(), String> {
+    run_command(shared_proxy_command(sandbox_dir, rebuild))
+}
+
+fn shared_proxy_command(sandbox_dir: &Path, rebuild: bool) -> Command {
+    let mut command = Command::new("docker");
+    command
+        .current_dir(sandbox_dir)
+        .arg("compose")
+        .arg("--project-name")
+        .arg("ai-sandbox")
+        .arg("-f")
+        .arg("docker-compose.yml")
+        .arg("up")
+        .arg("-d")
+        .arg("--wait");
+    if rebuild {
+        command.arg("--build");
+    }
+    command.arg("proxy");
+    command
 }
 
 fn yaml_path(path: &Path) -> String {
@@ -522,12 +585,16 @@ fn start_stack(
     sandbox_dir: &Path,
     override_path: &Path,
     defaults: &Defaults,
+    project_name: &str,
     docker_enabled: bool,
     rebuild: bool,
 ) -> Result<(), String> {
     let mut command = Command::new("docker");
     command.current_dir(sandbox_dir);
-    command.arg("compose");
+    command
+        .arg("compose")
+        .arg("--project-name")
+        .arg(project_name);
     for file in agent.compose_files(docker_enabled) {
         command.arg("-f").arg(file);
     }
@@ -535,8 +602,10 @@ fn start_stack(
     if rebuild {
         command.arg("--build");
     }
+    command.arg(agent.service());
     set_home_env(agent, &mut command);
     set_configured_home_env(agent, defaults, &mut command);
+    set_runtime_env(agent, project_name, docker_enabled, &mut command);
     run_command(command)
 }
 
@@ -545,28 +614,32 @@ fn exec_agent(
     sandbox_dir: &Path,
     override_path: &Path,
     defaults: &Defaults,
+    project_name: &str,
     mount: &Mount,
     docker_enabled: bool,
 ) -> Result<(), String> {
     let mut command = Command::new("docker");
     command.current_dir(sandbox_dir);
-    command.arg("compose");
+    command
+        .arg("compose")
+        .arg("--project-name")
+        .arg(project_name);
     for file in agent.compose_files(docker_enabled) {
         command.arg("-f").arg(file);
     }
     command.arg("-f").arg(override_path);
     command
         .arg("exec")
-        .arg("--user")
-        .arg("devops")
         .arg("-e")
         .arg("HOME=/home/devops")
         .arg("-w")
         .arg(container_context(&mount.name))
         .arg(agent.service())
+        .arg(agent.entrypoint())
         .arg(agent.command());
     set_home_env(agent, &mut command);
     set_configured_home_env(agent, defaults, &mut command);
+    set_runtime_env(agent, project_name, docker_enabled, &mut command);
     run_command(command)
 }
 
@@ -597,6 +670,25 @@ fn set_configured_home_env(agent: Agent, defaults: &Defaults, command: &mut Comm
     }
 }
 
+fn set_runtime_env(agent: Agent, project_name: &str, docker_enabled: bool, command: &mut Command) {
+    command.env("COMPOSE_IGNORE_ORPHANS", "true");
+    command.env("COMPOSE_PROFILES", agent.command());
+    command.env(
+        agent.container_name_env(),
+        format!("{project_name}-{}", agent.service()),
+    );
+    if docker_enabled {
+        command.env(
+            "AGENT_DIND_DATA_VOLUME",
+            format!("{project_name}-dind-data"),
+        );
+        command.env(
+            "AGENT_DIND_SOCK_VOLUME",
+            format!("{project_name}-dind-sock"),
+        );
+    }
+}
+
 fn run_command(mut command: Command) -> Result<(), String> {
     let status = command
         .stdin(Stdio::inherit())
@@ -609,5 +701,100 @@ fn run_command(mut command: Command) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("command exited with {status}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn workspace(name: &str) -> Workspace {
+        Workspace {
+            name: name.to_string(),
+            mounts: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn runtime_project_is_scoped_by_workspace_and_mode() {
+        let workspace = workspace("Kubernetes API");
+
+        assert_eq!(
+            runtime_project_name(&workspace, true),
+            "agent-box-kubernetes-api-docker"
+        );
+        assert_eq!(
+            runtime_project_name(&workspace, false),
+            "agent-box-kubernetes-api-plain"
+        );
+    }
+
+    #[test]
+    fn compose_files_are_consolidated() {
+        assert_eq!(
+            Agent::Claude.compose_files(false),
+            vec!["docker-compose.yml"]
+        );
+        assert_eq!(
+            Agent::Codex.compose_files(true),
+            vec!["docker-compose.yml", "docker-compose.docker.yml"]
+        );
+    }
+
+    #[test]
+    fn rebuild_flag_is_forwarded_to_shared_proxy() {
+        let rebuild_args = shared_proxy_command(Path::new("/sandbox"), true)
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let reuse_args = shared_proxy_command(Path::new("/sandbox"), false)
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(rebuild_args.iter().any(|argument| argument == "--build"));
+        assert!(!reuse_args.iter().any(|argument| argument == "--build"));
+    }
+
+    #[test]
+    fn config_rejects_colliding_runtime_names() {
+        let contents = r#"
+[[workspaces]]
+name = "API"
+
+[[workspaces.mounts]]
+name = "service-a"
+host = "/workspace/service-a"
+
+[[workspaces]]
+name = "api"
+
+[[workspaces.mounts]]
+name = "service-b"
+host = "/workspace/service-b"
+"#;
+
+        let error = match parse_config(Path::new("box.toml"), contents) {
+            Ok(_) => panic!("colliding workspace names should be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("'API' and 'api' normalize to the same runtime name 'api'"));
+    }
+
+    #[test]
+    fn mount_targets_are_stable_inside_agent_and_dind() {
+        let mounts = vec![Mount {
+            name: "api".to_string(),
+            host: PathBuf::from("/host/workspace/api"),
+        }];
+        let mut agent = String::new();
+        let mut daemon = String::new();
+
+        write_service_mounts(&mut agent, "codex-agent", &mounts);
+        write_service_mounts(&mut daemon, "docker-daemon", &mounts);
+
+        assert!(agent.contains("target: /home/devops/project/api"));
+        assert!(daemon.contains("target: /home/devops/project/api"));
     }
 }

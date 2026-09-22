@@ -8,7 +8,6 @@ case "$AGENT_KIND" in
   claude)
     COMPOSE_FILES=(
       -f "$ROOT_DIR/docker-compose.yml"
-      -f "$ROOT_DIR/docker-compose.claude.yml"
       -f "$ROOT_DIR/.ci/docker-compose.test.yml"
     )
     AGENT_SERVICE="claude-agent"
@@ -21,7 +20,6 @@ case "$AGENT_KIND" in
   codex)
     COMPOSE_FILES=(
       -f "$ROOT_DIR/docker-compose.yml"
-      -f "$ROOT_DIR/docker-compose.codex.yml"
       -f "$ROOT_DIR/.ci/docker-compose.test.yml"
     )
     AGENT_SERVICE="codex-agent"

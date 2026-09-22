@@ -1,5 +1,6 @@
 services:
   docker-daemon-init:
+    profiles: ["claude", "codex"]
     image: alpine:3.20
     command:
       - sh
@@ -12,6 +13,7 @@ services:
     restart: "no"
 
   docker-daemon:
+    profiles: ["claude", "codex"]
     image: ${DOCKER_DIND_IMAGE:-docker:27-dind-rootless}
     privileged: true
     security_opt:
@@ -50,8 +52,38 @@ services:
       - agent_dind_sock:/run/user/1000
     restart: unless-stopped
 
+  claude-agent:
+    build:
+      target: claude-docker
+      args:
+        DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
+        HELM_VERSION: ${HELM_VERSION:-v3.18.4}
+    image: ${CLAUDE_DOCKER_IMAGE_NAME:-ai-sandbox-claude-agent-docker:local}
+    depends_on:
+      docker-daemon:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: unix:///run/user/1000/docker.sock
+    volumes:
+      - agent_dind_sock:/run/user/1000
+
+  codex-agent:
+    build:
+      target: codex-docker
+      args:
+        DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
+        HELM_VERSION: ${HELM_VERSION:-v3.18.4}
+    image: ${CODEX_DOCKER_IMAGE_NAME:-ai-sandbox-codex-agent-docker:local}
+    depends_on:
+      docker-daemon:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: unix:///run/user/1000/docker.sock
+    volumes:
+      - agent_dind_sock:/run/user/1000
+
 volumes:
   agent_dind_data:
-    name: ai-sandbox-agent-dind-data
+    name: ${AGENT_DIND_DATA_VOLUME:-ai-sandbox-agent-dind-data}
   agent_dind_sock:
-    name: ai-sandbox-agent-dind-sock
+    name: ${AGENT_DIND_SOCK_VOLUME:-ai-sandbox-agent-dind-sock}

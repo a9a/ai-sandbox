@@ -1,3 +1,29 @@
+x-agent-environment: &agent-environment
+  HTTP_PROXY: http://proxy:3128
+  HTTPS_PROXY: http://proxy:3128
+  NO_PROXY: localhost,127.0.0.1,proxy
+  GITHUB_TOKEN_FILE: /run/secrets/github_token
+  GIT_USER_NAME: ${GIT_USER_NAME:-}
+  GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+
+x-github-secret: &github-secret
+  source: github_token
+  target: github_token
+
+x-project-volume: &project-volume
+  type: bind
+  source: ${AI_HOME_PATH:-.}
+  target: /home/devops/project
+
+x-agent-common: &agent-common
+  depends_on:
+    proxy:
+      condition: service_healthy
+  networks:
+    - agent_net
+  stdin_open: true
+  tty: true
+
 services:
   proxy:
     build:
@@ -15,13 +41,68 @@ services:
       - egress_net
     restart: unless-stopped
 
+  claude-agent:
+    <<: *agent-common
+    profiles: ["claude"]
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      target: claude
+      args:
+        CLAUDE_NODE_IMAGE: ${CLAUDE_NODE_IMAGE:-node:24-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.109}
+    image: ${CLAUDE_IMAGE_NAME:-ai-sandbox-claude-agent:local}
+    container_name: ${CLAUDE_CONTAINER_NAME:-ai-sandbox-claude-agent}
+    environment:
+      <<: *agent-environment
+      ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+    secrets:
+      - *github-secret
+      - source: anthropic_api_key
+        target: anthropic_api_key
+    volumes:
+      - *project-volume
+      - type: bind
+        source: ${CLAUDE_HOME_PATH:-${PWD}/.claude}
+        target: /home/devops/.claude
+
+  codex-agent:
+    <<: *agent-common
+    profiles: ["codex"]
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      target: codex
+      args:
+        CODEX_NODE_IMAGE: ${CODEX_NODE_IMAGE:-node:24-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5}
+        CODEX_VERSION: ${CODEX_VERSION:-0.143.0}
+    image: ${CODEX_IMAGE_NAME:-ai-sandbox-codex-agent:local}
+    container_name: ${CODEX_CONTAINER_NAME:-ai-sandbox-codex-agent}
+    environment:
+      <<: *agent-environment
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    secrets:
+      - *github-secret
+      - source: openai_api_key
+        target: openai_api_key
+    volumes:
+      - *project-volume
+      - type: bind
+        source: ${CODEX_HOME_PATH:-${PWD}/.codex}
+        target: /home/devops/.codex
+
 secrets:
   github_token:
     environment: GITHUB_TOKEN
+  anthropic_api_key:
+    environment: ANTHROPIC_API_KEY
+  openai_api_key:
+    environment: OPENAI_API_KEY
 
 networks:
-  # Internal network: agent can talk to proxy but has no direct internet egress.
+  # Internal network: agents can talk to the proxy but have no direct egress.
   agent_net:
+    name: ai-sandbox_agent_net
     internal: true
   # External network used only by the proxy for internet egress.
   egress_net: {}
