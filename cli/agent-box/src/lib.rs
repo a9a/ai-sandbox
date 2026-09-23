@@ -177,6 +177,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         &override_path,
         &config.defaults,
         &project_name,
+        workspace,
         mount,
         docker_enabled,
     )
@@ -529,7 +530,12 @@ fn write_compose_override(
     };
 
     let mut contents = String::from("services:\n");
-    write_service_mounts(&mut contents, agent.service(), &workspace.mounts);
+    write_service_mounts(
+        &mut contents,
+        agent.service(),
+        &workspace.name,
+        &workspace.mounts,
+    );
     if let Some(path) = instruction_path.as_deref() {
         write_instruction_mount(&mut contents, agent, path);
     }
@@ -541,7 +547,12 @@ fn write_compose_override(
         contents.push_str(
             "    depends_on: !override\n      docker-daemon:\n        condition: service_healthy\n",
         );
-        write_service_mounts(&mut contents, "docker-daemon", &workspace.mounts);
+        write_service_mounts(
+            &mut contents,
+            "docker-daemon",
+            &workspace.name,
+            &workspace.mounts,
+        );
         if let Some(port_range) = workspace.docker_ports {
             write_docker_port_mapping(&mut contents, port_range);
             write_port_environment(&mut contents, port_range);
@@ -672,14 +683,19 @@ fn configured_agent_home(agent: Agent, defaults: &Defaults) -> Option<PathBuf> {
     }
 }
 
-fn write_service_mounts(contents: &mut String, service: &str, mounts: &[Mount]) {
+fn write_service_mounts(
+    contents: &mut String,
+    service: &str,
+    workspace_name: &str,
+    mounts: &[Mount],
+) {
     contents.push_str(&format!("  {service}:\n"));
     contents.push_str("    volumes:\n");
     for mount in mounts {
         contents.push_str(&format!(
-            "      - type: bind\n        source: {}\n        target: /home/devops/project/{}\n",
+            "      - type: bind\n        source: {}\n        target: {}\n",
             yaml_path(&mount.host),
-            yaml_segment(&mount.name)
+            container_context(workspace_name, &mount.name)
         ));
     }
 }
@@ -850,6 +866,7 @@ fn exec_agent(
     override_path: &Path,
     defaults: &Defaults,
     project_name: &str,
+    workspace: &Workspace,
     mount: &Mount,
     docker_enabled: bool,
 ) -> Result<(), String> {
@@ -868,7 +885,7 @@ fn exec_agent(
         .arg("-e")
         .arg("HOME=/home/devops")
         .arg("-w")
-        .arg(container_context(&mount.name))
+        .arg(container_context(&workspace.name, &mount.name))
         .arg(agent.service())
         .arg(agent.entrypoint())
         .arg(agent.command());
@@ -877,8 +894,12 @@ fn exec_agent(
     run_command(command)
 }
 
-fn container_context(mount_name: &str) -> String {
-    format!("/home/devops/project/{}", yaml_segment(mount_name))
+fn container_context(workspace_name: &str, mount_name: &str) -> String {
+    format!(
+        "/home/devops/project/{}/{}",
+        sanitize_name(workspace_name).to_ascii_lowercase(),
+        yaml_segment(mount_name)
+    )
 }
 
 fn set_agent_home_env(agent: Agent, defaults: &Defaults, command: &mut Command) {
@@ -1009,11 +1030,19 @@ host = "/workspace/service-b"
         let mut agent = String::new();
         let mut daemon = String::new();
 
-        write_service_mounts(&mut agent, "codex-agent", &mounts);
-        write_service_mounts(&mut daemon, "docker-daemon", &mounts);
+        write_service_mounts(&mut agent, "codex-agent", "Platform", &mounts);
+        write_service_mounts(&mut daemon, "docker-daemon", "Platform", &mounts);
 
-        assert!(agent.contains("target: /home/devops/project/api"));
-        assert!(daemon.contains("target: /home/devops/project/api"));
+        assert!(agent.contains("target: /home/devops/project/platform/api"));
+        assert!(daemon.contains("target: /home/devops/project/platform/api"));
+    }
+
+    #[test]
+    fn selected_context_is_scoped_by_workspace() {
+        assert_eq!(
+            container_context("Kubernetes API", "backend"),
+            "/home/devops/project/kubernetes-api/backend"
+        );
     }
 
     #[test]

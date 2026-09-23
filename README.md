@@ -172,7 +172,7 @@ cargo run --manifest-path cli/agent-box/Cargo.toml --bin claude-box
 cargo run --manifest-path cli/agent-box/Cargo.toml --bin codex-box
 ```
 
-The launcher reads `box.toml` from `~/.config/ai-sandbox/box.toml`. Repository-local `box.toml` files are ignored. The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, and opens Claude or Codex in `/home/devops/project/<mount-name>`. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack or `--build` to rebuild images before opening the agent.
+The launcher reads `box.toml` from `~/.config/ai-sandbox/box.toml`. Repository-local `box.toml` files are ignored. The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, and opens Claude or Codex in `/home/devops/project/<workspace-name>/<mount-name>`. The same paths are mounted in the workspace DinD daemon so inner bind mounts resolve correctly. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack or `--build` to rebuild images before opening the agent.
 
 Launcher agent homes are isolated by default under `~/.ai-sandbox/claude` and `~/.ai-sandbox/codex`; the launcher creates them with mode `0700`. To explicitly share existing host configuration, set `claude_home` or `codex_home` in `[defaults]`, or export `CLAUDE_HOME_PATH` / `CODEX_HOME_PATH`.
 
