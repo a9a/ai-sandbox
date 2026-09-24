@@ -1,7 +1,10 @@
+mod compose;
+mod config;
+
+use compose::{container_context, runtime_project_name, write_compose_override};
+use config::{load_config, Defaults, Mount, Workspace};
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
-use std::collections::HashMap;
 use std::env;
-use std::fmt;
 use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -81,46 +84,6 @@ impl Agent {
     }
 }
 
-struct Workspace {
-    name: String,
-    mounts: Vec<Mount>,
-    docker_ports: Option<PortRange>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct PortRange {
-    start: u16,
-    end: u16,
-}
-
-impl PortRange {
-    fn overlaps(self, other: Self) -> bool {
-        self.start <= other.end && other.start <= self.end
-    }
-}
-
-impl fmt::Display for PortRange {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}-{}", self.start, self.end)
-    }
-}
-
-struct Mount {
-    name: String,
-    host: PathBuf,
-}
-
-struct Defaults {
-    claude_home: Option<PathBuf>,
-    codex_home: Option<PathBuf>,
-    docker: bool,
-}
-
-struct Config {
-    defaults: Defaults,
-    workspaces: Vec<Workspace>,
-}
-
 pub fn run(agent: Agent) -> i32 {
     match run_inner(agent) {
         Ok(()) => 0,
@@ -147,6 +110,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     let workspace = choose_workspace(&config.workspaces)?;
     let mount = choose_mount(workspace)?;
     let project_name = runtime_project_name(workspace, docker_enabled);
+    let workdir = container_context(&workspace.name, &mount.name);
     if let Some(port_range) = workspace.docker_ports.filter(|_| docker_enabled) {
         println!(
             "Docker ports published to host for '{}': {}",
@@ -177,8 +141,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         &override_path,
         &config.defaults,
         &project_name,
-        workspace,
-        mount,
+        &workdir,
         docker_enabled,
     )
 }
@@ -216,436 +179,11 @@ fn find_sandbox_dir() -> Result<PathBuf, String> {
     Err("run from ai-sandbox or set AI_SANDBOX_DIR".to_string())
 }
 
-fn load_config() -> Result<Config, String> {
-    let config_path = env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| home.join(".config").join("ai-sandbox").join("box.toml"))
-        .ok_or_else(|| {
-            "cannot locate ~/.config/ai-sandbox/box.toml; HOME is not set".to_string()
-        })?;
-    let contents = fs::read_to_string(&config_path)
-        .map_err(|error| format!("cannot read {}: {error}", config_path.display()))?;
-    parse_config(&config_path, &contents)
-}
-
-fn parse_config(config_path: &Path, contents: &str) -> Result<Config, String> {
-    enum Section {
-        None,
-        Defaults,
-        Workspace,
-        Mount,
-    }
-
-    let mut defaults = Defaults {
-        claude_home: None,
-        codex_home: None,
-        docker: true,
-    };
-    let mut workspaces = Vec::new();
-    let mut current_workspace: Option<Workspace> = None;
-    let mut current_mount: Option<Mount> = None;
-    let mut section = Section::None;
-
-    for (line_number, line) in contents.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
-        match trimmed {
-            "[defaults]" => {
-                finish_mount(&mut current_workspace, &mut current_mount)?;
-                finish_workspace(&mut workspaces, &mut current_workspace)?;
-                section = Section::Defaults;
-                continue;
-            }
-            "[[workspaces]]" => {
-                finish_mount(&mut current_workspace, &mut current_mount)?;
-                finish_workspace(&mut workspaces, &mut current_workspace)?;
-                current_workspace = Some(Workspace {
-                    name: String::new(),
-                    mounts: Vec::new(),
-                    docker_ports: None,
-                });
-                section = Section::Workspace;
-                continue;
-            }
-            "[[workspaces.mounts]]" => {
-                finish_mount(&mut current_workspace, &mut current_mount)?;
-                if current_workspace.is_none() {
-                    return Err(format!(
-                        "{}:{}: mount defined before workspace",
-                        config_path.display(),
-                        line_number + 1
-                    ));
-                }
-                current_mount = Some(Mount {
-                    name: String::new(),
-                    host: PathBuf::new(),
-                });
-                section = Section::Mount;
-                continue;
-            }
-            _ => {}
-        }
-
-        let Some((key, value)) = trimmed.split_once('=') else {
-            return Err(format!(
-                "{}:{}: expected key = value",
-                config_path.display(),
-                line_number + 1
-            ));
-        };
-
-        let key = key.trim();
-        let value = parse_value(value.trim());
-
-        match section {
-            Section::Defaults => match key {
-                "claude_home" => defaults.claude_home = Some(PathBuf::from(expand_home(&value))),
-                "codex_home" => defaults.codex_home = Some(PathBuf::from(expand_home(&value))),
-                "docker" => defaults.docker = parse_bool(config_path, line_number + 1, &value)?,
-                _ => return Err(unknown_key(config_path, line_number + 1, key)),
-            },
-            Section::Workspace => {
-                let workspace = current_workspace.as_mut().ok_or_else(|| {
-                    format!(
-                        "{}:{}: workspace key outside workspace section",
-                        config_path.display(),
-                        line_number + 1
-                    )
-                })?;
-                match key {
-                    "name" => workspace.name = value,
-                    "docker_ports" => {
-                        workspace.docker_ports =
-                            Some(parse_port_range(config_path, line_number + 1, &value)?)
-                    }
-                    _ => return Err(unknown_key(config_path, line_number + 1, key)),
-                }
-            }
-            Section::Mount => {
-                let mount = current_mount.as_mut().ok_or_else(|| {
-                    format!(
-                        "{}:{}: mount key outside mount section",
-                        config_path.display(),
-                        line_number + 1
-                    )
-                })?;
-                match key {
-                    "name" => mount.name = value,
-                    "host" => mount.host = PathBuf::from(expand_home(&value)),
-                    _ => return Err(unknown_key(config_path, line_number + 1, key)),
-                }
-            }
-            Section::None => {
-                return Err(format!(
-                    "{}:{}: key outside a section",
-                    config_path.display(),
-                    line_number + 1
-                ));
-            }
-        }
-    }
-
-    finish_mount(&mut current_workspace, &mut current_mount)?;
-    finish_workspace(&mut workspaces, &mut current_workspace)?;
-
-    if workspaces.is_empty() {
-        return Err(format!(
-            "no workspaces configured in {}",
-            config_path.display()
-        ));
-    }
-
-    let mut runtime_names = HashMap::new();
-    let mut workspace_port_ranges = Vec::new();
-    for workspace in &workspaces {
-        if workspace.name.is_empty() {
-            return Err(format!(
-                "{}: workspace name is required",
-                config_path.display()
-            ));
-        }
-        let runtime_name = sanitize_name(&workspace.name).to_ascii_lowercase();
-        if let Some(existing_name) = runtime_names.insert(runtime_name.clone(), &workspace.name) {
-            return Err(format!(
-                "{}: workspace names '{}' and '{}' normalize to the same runtime name '{}'",
-                config_path.display(),
-                existing_name,
-                workspace.name,
-                runtime_name
-            ));
-        }
-        if workspace.mounts.is_empty() {
-            return Err(format!(
-                "{}: workspace '{}' has no mounts",
-                config_path.display(),
-                workspace.name
-            ));
-        }
-        for mount in &workspace.mounts {
-            if mount.name.is_empty() || !mount.host.is_absolute() {
-                return Err(format!(
-                    "{}: mount in workspace '{}' requires name and absolute host path",
-                    config_path.display(),
-                    workspace.name
-                ));
-            }
-        }
-        if let Some(port_range) = workspace.docker_ports {
-            if let Some((existing_name, existing_range)) = workspace_port_ranges
-                .iter()
-                .find(|(_, existing_range)| port_range.overlaps(*existing_range))
-            {
-                return Err(format!(
-                    "{}: docker port ranges for workspaces '{}' ({}) and '{}' ({}) overlap",
-                    config_path.display(),
-                    existing_name,
-                    existing_range,
-                    workspace.name,
-                    port_range
-                ));
-            }
-            workspace_port_ranges.push((&workspace.name, port_range));
-        }
-    }
-
-    Ok(Config {
-        defaults,
-        workspaces,
-    })
-}
-
-fn finish_workspace(
-    workspaces: &mut Vec<Workspace>,
-    current_workspace: &mut Option<Workspace>,
-) -> Result<(), String> {
-    if let Some(workspace) = current_workspace.take() {
-        workspaces.push(workspace);
-    }
-    Ok(())
-}
-
-fn finish_mount(
-    current_workspace: &mut Option<Workspace>,
-    current_mount: &mut Option<Mount>,
-) -> Result<(), String> {
-    if let Some(mount) = current_mount.take() {
-        let workspace = current_workspace
-            .as_mut()
-            .ok_or_else(|| "mount defined before workspace".to_string())?;
-        workspace.mounts.push(mount);
-    }
-    Ok(())
-}
-
-fn parse_value(value: &str) -> String {
-    value
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'')
-        .to_string()
-}
-
-fn parse_bool(config_path: &Path, line_number: usize, value: &str) -> Result<bool, String> {
-    match value {
-        "true" => Ok(true),
-        "false" => Ok(false),
-        _ => Err(format!(
-            "{}:{}: expected true or false",
-            config_path.display(),
-            line_number
-        )),
-    }
-}
-
-fn parse_port_range(
-    config_path: &Path,
-    line_number: usize,
-    value: &str,
-) -> Result<PortRange, String> {
-    let Some((start, end)) = value.split_once('-') else {
-        return Err(format!(
-            "{}:{}: expected docker port range in START-END format",
-            config_path.display(),
-            line_number
-        ));
-    };
-    let parse_port = |port: &str| {
-        port.parse::<u16>().map_err(|_| {
-            format!(
-                "{}:{}: invalid Docker port '{}'",
-                config_path.display(),
-                line_number,
-                port
-            )
-        })
-    };
-    let start = parse_port(start)?;
-    let end = parse_port(end)?;
-    if start < 1024 || start > end {
-        return Err(format!(
-            "{}:{}: Docker port range must be ordered and use ports 1024-65535",
-            config_path.display(),
-            line_number
-        ));
-    }
-    Ok(PortRange { start, end })
-}
-
-fn unknown_key(config_path: &Path, line_number: usize, key: &str) -> String {
-    format!(
-        "{}:{}: unknown key '{}'",
-        config_path.display(),
-        line_number,
-        key
-    )
-}
-
-fn write_compose_override(
-    agent: Agent,
-    sandbox_dir: &Path,
-    defaults: &Defaults,
-    workspace: &Workspace,
-    docker_enabled: bool,
-) -> Result<PathBuf, String> {
-    let output_dir = sandbox_dir.join(".tmp").join("agent-box");
-    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
-
-    let output_path = output_dir.join(format!(
-        "{}-{}.yml",
-        agent.command(),
-        sanitize_name(&workspace.name)
-    ));
-    let instruction_path = if docker_enabled {
-        workspace
-            .docker_ports
-            .map(|port_range| {
-                write_runtime_instructions(agent, sandbox_dir, defaults, workspace, port_range)
-            })
-            .transpose()?
-    } else {
-        None
-    };
-
-    let mut contents = String::from("services:\n");
-    write_service_mounts(
-        &mut contents,
-        agent.service(),
-        &workspace.name,
-        &workspace.mounts,
-    );
-    if let Some(path) = instruction_path.as_deref() {
-        write_instruction_mount(&mut contents, agent, path);
-    }
-    contents.push_str("    command: [\"sleep\", \"infinity\"]\n");
-    if let Some(port_range) = workspace.docker_ports.filter(|_| docker_enabled) {
-        write_port_environment(&mut contents, port_range);
-    }
-    if docker_enabled {
-        contents.push_str(
-            "    depends_on: !override\n      docker-daemon:\n        condition: service_healthy\n",
-        );
-        write_service_mounts(
-            &mut contents,
-            "docker-daemon",
-            &workspace.name,
-            &workspace.mounts,
-        );
-        if let Some(port_range) = workspace.docker_ports {
-            write_docker_port_mapping(&mut contents, port_range);
-            write_port_environment(&mut contents, port_range);
-        }
-        contents.push_str(
-            "    depends_on: !override\n      docker-daemon-init:\n        condition: service_completed_successfully\n",
-        );
-    } else {
-        contents.push_str("    depends_on: !reset {}\n");
-    }
-    contents.push_str(
-        "networks:\n  agent_net: !override\n    external: true\n    name: ai-sandbox_agent_net\n",
-    );
-
-    fs::write(&output_path, contents).map_err(|error| error.to_string())?;
-    Ok(output_path)
-}
-
-fn write_instruction_mount(contents: &mut String, agent: Agent, path: &Path) {
-    contents.push_str(&format!(
-        "      - type: bind\n        source: {}\n        target: {}\n        read_only: true\n",
-        yaml_path(path),
-        agent.instruction_container_path()
-    ));
-}
-
-fn write_docker_port_mapping(contents: &mut String, port_range: PortRange) {
-    contents.push_str(&format!(
-        "    ports:\n      - \"127.0.0.1:{port_range}:{port_range}\"\n"
-    ));
-}
-
-fn write_port_environment(contents: &mut String, port_range: PortRange) {
-    contents.push_str(&format!(
-        "    environment:\n      SANDBOX_DOCKER_PORT_RANGE: \"{port_range}\"\n"
-    ));
-}
-
-fn write_runtime_instructions(
-    agent: Agent,
-    sandbox_dir: &Path,
-    defaults: &Defaults,
-    workspace: &Workspace,
-    port_range: PortRange,
-) -> Result<PathBuf, String> {
-    let instruction_dir = sandbox_dir
-        .join(".tmp")
-        .join("agent-box")
-        .join("instructions");
-    fs::create_dir_all(&instruction_dir).map_err(|error| error.to_string())?;
-    let instruction_path = instruction_dir.join(format!(
-        "{}-{}-{}",
-        agent.command(),
-        sanitize_name(&workspace.name),
-        agent.instruction_filename()
-    ));
-
-    let existing_instructions = agent_home(agent, defaults)
-        .map(|home| home.join(agent.instruction_filename()))
-        .filter(|path| path.is_file())
-        .map(|path| fs::read_to_string(&path).map_err(|error| error.to_string()))
-        .transpose()?
-        .unwrap_or_default();
-    let template_path = sandbox_dir.join("instructions").join("docker-ports.md");
-    let template = fs::read_to_string(&template_path)
-        .map_err(|error| format!("cannot read {}: {error}", template_path.display()))?;
-    let contents = combined_runtime_instructions(&existing_instructions, &template, port_range);
-    fs::write(&instruction_path, contents).map_err(|error| error.to_string())?;
-    Ok(instruction_path)
-}
-
-fn combined_runtime_instructions(existing: &str, template: &str, port_range: PortRange) -> String {
-    let mut contents = existing.trim_end().to_string();
-    if !contents.is_empty() {
-        contents.push_str("\n\n");
-    }
-    let rendered = template
-        .replace("{{docker_port_range}}", &port_range.to_string())
-        .replace("{{example_port}}", &port_range.start.to_string());
-    contents.push_str(rendered.trim());
-    contents.push('\n');
-    contents
-}
-
 fn agent_home(agent: Agent, defaults: &Defaults) -> Option<PathBuf> {
     if let Some(path) = env::var_os(agent.home_env()) {
         return Some(PathBuf::from(path));
     }
-    match agent {
-        Agent::Claude => defaults.claude_home.clone(),
-        Agent::Codex => defaults.codex_home.clone(),
-    }
-    .or_else(|| agent.default_home())
+    configured_agent_home(agent, defaults).or_else(|| agent.default_home())
 }
 
 fn ensure_agent_home(agent: Agent, defaults: &Defaults) -> Result<(), String> {
@@ -683,23 +221,6 @@ fn configured_agent_home(agent: Agent, defaults: &Defaults) -> Option<PathBuf> {
     }
 }
 
-fn write_service_mounts(
-    contents: &mut String,
-    service: &str,
-    workspace_name: &str,
-    mounts: &[Mount],
-) {
-    contents.push_str(&format!("  {service}:\n"));
-    contents.push_str("    volumes:\n");
-    for mount in mounts {
-        contents.push_str(&format!(
-            "      - type: bind\n        source: {}\n        target: {}\n",
-            yaml_path(&mount.host),
-            container_context(workspace_name, &mount.name)
-        ));
-    }
-}
-
 fn sanitize_name(name: &str) -> String {
     name.chars()
         .map(|character| {
@@ -710,12 +231,6 @@ fn sanitize_name(name: &str) -> String {
             }
         })
         .collect()
-}
-
-fn runtime_project_name(workspace: &Workspace, docker_enabled: bool) -> String {
-    let workspace_name = sanitize_name(&workspace.name).to_ascii_lowercase();
-    let mode = if docker_enabled { "docker" } else { "plain" };
-    format!("agent-box-{workspace_name}-{mode}")
 }
 
 fn start_shared_proxy(sandbox_dir: &Path, rebuild: bool) -> Result<(), String> {
@@ -739,30 +254,6 @@ fn shared_proxy_command(sandbox_dir: &Path, rebuild: bool) -> Command {
     }
     command.arg("proxy");
     command
-}
-
-fn yaml_path(path: &Path) -> String {
-    yaml_quote(&path.display().to_string())
-}
-
-fn yaml_segment(value: &str) -> String {
-    value.replace(':', "-")
-}
-
-fn yaml_quote(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
-fn expand_home(path: &str) -> String {
-    if path == "~" {
-        return env::var("HOME").unwrap_or_else(|_| path.to_string());
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return format!("{home}/{rest}");
-        }
-    }
-    path.to_string()
 }
 
 fn choose_workspace(workspaces: &[Workspace]) -> Result<&Workspace, String> {
@@ -792,7 +283,6 @@ fn choose_mount(workspace: &Workspace) -> Result<&Mount, String> {
     }
 
     let options = format_mount_options(&workspace.mounts);
-
     let selected = choose_from_menu(&format!("{} context", workspace.name), &options)?;
     Ok(&workspace.mounts[selected])
 }
@@ -866,8 +356,7 @@ fn exec_agent(
     override_path: &Path,
     defaults: &Defaults,
     project_name: &str,
-    workspace: &Workspace,
-    mount: &Mount,
+    workdir: &str,
     docker_enabled: bool,
 ) -> Result<(), String> {
     let mut command = Command::new("docker");
@@ -885,21 +374,13 @@ fn exec_agent(
         .arg("-e")
         .arg("HOME=/home/devops")
         .arg("-w")
-        .arg(container_context(&workspace.name, &mount.name))
+        .arg(workdir)
         .arg(agent.service())
         .arg(agent.entrypoint())
         .arg(agent.command());
     set_agent_home_env(agent, defaults, &mut command);
     set_runtime_env(agent, project_name, docker_enabled, &mut command);
     run_command(command)
-}
-
-fn container_context(workspace_name: &str, mount_name: &str) -> String {
-    format!(
-        "/home/devops/project/{}/{}",
-        sanitize_name(workspace_name).to_ascii_lowercase(),
-        yaml_segment(mount_name)
-    )
 }
 
 fn set_agent_home_env(agent: Agent, defaults: &Defaults, command: &mut Command) {
@@ -946,28 +427,6 @@ fn run_command(mut command: Command) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    fn workspace(name: &str) -> Workspace {
-        Workspace {
-            name: name.to_string(),
-            mounts: Vec::new(),
-            docker_ports: None,
-        }
-    }
-
-    #[test]
-    fn runtime_project_is_scoped_by_workspace_and_mode() {
-        let workspace = workspace("Kubernetes API");
-
-        assert_eq!(
-            runtime_project_name(&workspace, true),
-            "agent-box-kubernetes-api-docker"
-        );
-        assert_eq!(
-            runtime_project_name(&workspace, false),
-            "agent-box-kubernetes-api-plain"
-        );
-    }
-
     #[test]
     fn compose_files_are_consolidated() {
         assert_eq!(
@@ -993,158 +452,5 @@ mod tests {
 
         assert!(rebuild_args.iter().any(|argument| argument == "--build"));
         assert!(!reuse_args.iter().any(|argument| argument == "--build"));
-    }
-
-    #[test]
-    fn config_rejects_colliding_runtime_names() {
-        let contents = r#"
-[[workspaces]]
-name = "API"
-
-[[workspaces.mounts]]
-name = "service-a"
-host = "/workspace/service-a"
-
-[[workspaces]]
-name = "api"
-
-[[workspaces.mounts]]
-name = "service-b"
-host = "/workspace/service-b"
-"#;
-
-        let error = match parse_config(Path::new("box.toml"), contents) {
-            Ok(_) => panic!("colliding workspace names should be rejected"),
-            Err(error) => error,
-        };
-
-        assert!(error.contains("'API' and 'api' normalize to the same runtime name 'api'"));
-    }
-
-    #[test]
-    fn mount_targets_are_stable_inside_agent_and_dind() {
-        let mounts = vec![Mount {
-            name: "api".to_string(),
-            host: PathBuf::from("/host/workspace/api"),
-        }];
-        let mut agent = String::new();
-        let mut daemon = String::new();
-
-        write_service_mounts(&mut agent, "codex-agent", "Platform", &mounts);
-        write_service_mounts(&mut daemon, "docker-daemon", "Platform", &mounts);
-
-        assert!(agent.contains("target: /home/devops/project/platform/api"));
-        assert!(daemon.contains("target: /home/devops/project/platform/api"));
-    }
-
-    #[test]
-    fn selected_context_is_scoped_by_workspace() {
-        assert_eq!(
-            container_context("Kubernetes API", "backend"),
-            "/home/devops/project/kubernetes-api/backend"
-        );
-    }
-
-    #[test]
-    fn config_parses_workspace_docker_port_range() {
-        let contents = r#"
-[[workspaces]]
-name = "api"
-docker_ports = "18000-18099"
-
-[[workspaces.mounts]]
-name = "api"
-host = "/workspace/api"
-"#;
-
-        let config = parse_config(Path::new("box.toml"), contents).unwrap();
-
-        assert_eq!(
-            config.workspaces[0].docker_ports,
-            Some(PortRange {
-                start: 18000,
-                end: 18099
-            })
-        );
-    }
-
-    #[test]
-    fn config_rejects_overlapping_workspace_docker_port_ranges() {
-        let contents = r#"
-[[workspaces]]
-name = "api"
-docker_ports = "18000-18099"
-
-[[workspaces.mounts]]
-name = "api"
-host = "/workspace/api"
-
-[[workspaces]]
-name = "web"
-docker_ports = "18099-18199"
-
-[[workspaces.mounts]]
-name = "web"
-host = "/workspace/web"
-"#;
-
-        let error = match parse_config(Path::new("box.toml"), contents) {
-            Ok(_) => panic!("overlapping Docker port ranges should be rejected"),
-            Err(error) => error,
-        };
-
-        assert!(error.contains("docker port ranges for workspaces 'api'"));
-        assert!(error.contains("and 'web' (18099-18199) overlap"));
-    }
-
-    #[test]
-    fn config_rejects_privileged_docker_port_range() {
-        let contents = r#"
-[[workspaces]]
-name = "api"
-docker_ports = "80-100"
-
-[[workspaces.mounts]]
-name = "api"
-host = "/workspace/api"
-"#;
-
-        let error = match parse_config(Path::new("box.toml"), contents) {
-            Ok(_) => panic!("privileged Docker ports should be rejected"),
-            Err(error) => error,
-        };
-
-        assert!(error.contains("ports 1024-65535"));
-    }
-
-    #[test]
-    fn docker_port_config_binds_same_range_to_loopback() {
-        let port_range = PortRange {
-            start: 18000,
-            end: 18099,
-        };
-        let mut contents = String::new();
-
-        write_docker_port_mapping(&mut contents, port_range);
-        write_port_environment(&mut contents, port_range);
-
-        assert!(contents.contains("127.0.0.1:18000-18099:18000-18099"));
-        assert!(contents.contains("SANDBOX_DOCKER_PORT_RANGE: \"18000-18099\""));
-    }
-
-    #[test]
-    fn runtime_instructions_preserve_user_instructions() {
-        let instructions = combined_runtime_instructions(
-            "# Existing instructions\n\n- Keep this rule.\n",
-            "Use `$SANDBOX_DOCKER_PORT_RANGE={{docker_port_range}}`. Example: `docker run -p {{example_port}}:80 nginx`.",
-            PortRange {
-                start: 18000,
-                end: 18099,
-            },
-        );
-
-        assert!(instructions.starts_with("# Existing instructions"));
-        assert!(instructions.contains("$SANDBOX_DOCKER_PORT_RANGE"));
-        assert!(instructions.contains("docker run -p 18000:80 nginx"));
     }
 }
