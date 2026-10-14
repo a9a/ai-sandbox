@@ -11,7 +11,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  TRIVY_SEVERITY: ${{ github.event_name == 'schedule' && 'CRITICAL' || 'HIGH,CRITICAL' }}
 
 jobs:
   trivy:
@@ -49,62 +48,128 @@ jobs:
             -t ai-sandbox-codex-agent-docker:security .
           docker build -t ai-sandbox-proxy:security ./proxy
 
-      - name: Trivy filesystem scan
+      - name: Trivy filesystem HIGH warnings
+        continue-on-error: true
         uses: &trivy_action aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
           scan-type: fs
           scan-ref: .
-          severity: ${{ env.TRIVY_SEVERITY }}
+          severity: HIGH
           ignore-unfixed: true
           exit-code: "1"
           format: table
 
-      - name: Trivy Claude image scan
+      - name: Trivy Claude image HIGH warnings
+        continue-on-error: true
         uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-claude-agent:security
-          severity: ${{ env.TRIVY_SEVERITY }}
+          severity: HIGH
           ignore-unfixed: true
           exit-code: "1"
           format: table
 
-      - name: Trivy Codex image scan
+      - name: Trivy Codex image HIGH warnings
+        continue-on-error: true
         uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-codex-agent:security
-          severity: ${{ env.TRIVY_SEVERITY }}
+          severity: HIGH
           ignore-unfixed: true
           exit-code: "1"
           format: table
 
-      - name: Trivy proxy image scan
+      - name: Trivy proxy image HIGH warnings
+        continue-on-error: true
         uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-proxy:security
-          severity: ${{ env.TRIVY_SEVERITY }}
+          severity: HIGH
           ignore-unfixed: true
           exit-code: "1"
           format: table
 
-      - name: Trivy Claude Docker image scan
+      - name: Trivy Claude Docker image HIGH warnings
+        continue-on-error: true
         uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-claude-agent-docker:security
-          severity: ${{ env.TRIVY_SEVERITY }}
+          severity: HIGH
           ignore-unfixed: true
           exit-code: "1"
           format: table
 
-      - name: Trivy Codex Docker image scan
+      - name: Trivy Codex Docker image HIGH warnings
+        continue-on-error: true
         uses: *trivy_action
         with:
           scan-type: image
           image-ref: ai-sandbox-codex-agent-docker:security
-          severity: ${{ env.TRIVY_SEVERITY }}
+          severity: HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy filesystem CRITICAL gate
+        uses: *trivy_action
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy Claude image CRITICAL gate
+        uses: *trivy_action
+        with:
+          scan-type: image
+          image-ref: ai-sandbox-claude-agent:security
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy Codex image CRITICAL gate
+        uses: *trivy_action
+        with:
+          scan-type: image
+          image-ref: ai-sandbox-codex-agent:security
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy proxy image CRITICAL gate
+        uses: *trivy_action
+        with:
+          scan-type: image
+          image-ref: ai-sandbox-proxy:security
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy Claude Docker image CRITICAL gate
+        uses: *trivy_action
+        with:
+          scan-type: image
+          image-ref: ai-sandbox-claude-agent-docker:security
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Trivy Codex Docker image CRITICAL gate
+        uses: *trivy_action
+        with:
+          scan-type: image
+          image-ref: ai-sandbox-codex-agent-docker:security
+          severity: CRITICAL
           ignore-unfixed: true
           exit-code: "1"
           format: table

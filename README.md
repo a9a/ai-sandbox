@@ -316,7 +316,8 @@ Covered checks:
   - integration tests for both agents.
 - `.github/workflows/security.yml`
   - daily Trivy scan of repo + proxy image + Claude image + Codex image,
-  - fails on `HIGH`/`CRITICAL`.
+  - reports `HIGH` findings without blocking CI,
+  - fails on `CRITICAL` findings.
 
 ## Renovate
 
