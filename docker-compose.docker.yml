@@ -1,7 +1,7 @@
 services:
   docker-daemon-init:
     profiles: ["claude", "codex"]
-    image: alpine:3.20
+    image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     command:
       - sh
       - -lc
@@ -14,7 +14,7 @@ services:
 
   docker-daemon:
     profiles: ["claude", "codex"]
-    image: ${DOCKER_DIND_IMAGE:-docker:27-dind-rootless}
+    image: ${DOCKER_DIND_IMAGE:-docker:28-dind-rootless@sha256:7c3e797187e43738220462658f4586572cbd3bf009f728b21e34d9c5c06ce431}
     privileged: true
     security_opt:
       - seccomp=unconfined
