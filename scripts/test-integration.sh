@@ -101,6 +101,12 @@ fi
 
 compose build "$AGENT_SERVICE"
 
+if [[ "$AGENT_KIND" == "claude" ]]; then
+  compose run --rm \
+    --volume "$ROOT_DIR/instructions/docker-ports.md:/home/devops/.claude/CLAUDE.md:ro" \
+    "$AGENT_SERVICE" true
+fi
+
 compose run --rm "$AGENT_SERVICE" sh -lc \
   "test -f '$SECRET_CONTAINER_FILE' && test -n \"\$(printenv '$SECRET_ENV_NAME' || true)\""
 compose run --rm "$AGENT_SERVICE" sh -lc \

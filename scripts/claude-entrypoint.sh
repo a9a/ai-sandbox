@@ -16,7 +16,9 @@ if [[ "$(id -u)" -eq 0 ]]; then
   mkdir -p /home/devops/.claude
   touch /home/devops/.claude/.claude.json
   ln -sfn /home/devops/.claude/.claude.json /home/devops/.claude.json
-  chown -R devops:devops /home/devops/.claude
+  find /home/devops/.claude \
+    -path /home/devops/.claude/CLAUDE.md -prune \
+    -o -exec chown -h devops:devops {} +
   chown -h devops:devops /home/devops/.claude.json || true
 fi
 
