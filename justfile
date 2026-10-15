@@ -21,13 +21,13 @@ claude-up:
     {{compose_claude}} up -d --build claude-agent
 
 claude-down:
-    {{compose_claude}} down
+    {{compose_claude}} rm -sf claude-agent
 
 claude-up-secure: claude-up firewall-apply-claude
 
 claude-down-secure:
     -./scripts/remove-egress-firewall.sh
-    {{compose_claude}} down
+    {{compose_claude}} rm -sf claude-agent
 
 claude-workspace:
     {{compose_claude}} exec --user devops -e HOME=/home/devops -w /home/devops/project claude-agent bash
@@ -39,13 +39,13 @@ claude-docker-up:
     {{compose_claude_docker}} up -d --build claude-agent
 
 claude-docker-down:
-    {{compose_claude_docker}} down
+    {{compose_claude_docker}} rm -sf claude-agent
 
 claude-docker-up-secure: claude-docker-up firewall-apply-claude-docker
 
 claude-docker-down-secure:
     -./scripts/remove-egress-firewall.sh
-    {{compose_claude_docker}} down
+    {{compose_claude_docker}} rm -sf claude-agent
 
 claude-docker-workspace:
     {{compose_claude_docker}} exec --user devops -e HOME=/home/devops -w /home/devops/project claude-agent bash
@@ -57,13 +57,13 @@ codex-up:
     {{compose_codex}} up -d --build codex-agent
 
 codex-down:
-    {{compose_codex}} down
+    {{compose_codex}} rm -sf codex-agent
 
 codex-up-secure: codex-up firewall-apply-codex
 
 codex-down-secure:
     -./scripts/remove-egress-firewall.sh
-    {{compose_codex}} down
+    {{compose_codex}} rm -sf codex-agent
 
 codex-workspace:
     {{compose_codex}} exec --user devops -e HOME=/home/devops -w /home/devops/project codex-agent bash
@@ -75,13 +75,13 @@ codex-docker-up:
     {{compose_codex_docker}} up -d --build codex-agent
 
 codex-docker-down:
-    {{compose_codex_docker}} down
+    {{compose_codex_docker}} rm -sf codex-agent
 
 codex-docker-up-secure: codex-docker-up firewall-apply-codex-docker
 
 codex-docker-down-secure:
     -./scripts/remove-egress-firewall.sh
-    {{compose_codex_docker}} down
+    {{compose_codex_docker}} rm -sf codex-agent
 
 codex-docker-workspace:
     {{compose_codex_docker}} exec --user devops -e HOME=/home/devops -w /home/devops/project codex-agent bash

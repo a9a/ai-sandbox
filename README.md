@@ -93,6 +93,8 @@ just claude-logs
 just claude-down
 ```
 
+Per-agent `*-down` targets remove only the selected agent container. Shared proxy, Docker sidecar, and networks remain available to other agents; use `just down-all` to remove the complete shared stack.
+
 Docker-enabled profiles:
 
 ```bash
