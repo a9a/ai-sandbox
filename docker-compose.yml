@@ -29,6 +29,7 @@ services:
     build:
       context: ./proxy
       dockerfile: Dockerfile
+    image: ${PROXY_IMAGE_NAME:-ai-sandbox-proxy}
     container_name: ai-sandbox-proxy
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "3128"]
@@ -41,6 +42,33 @@ services:
       - egress_net
     tmpfs:
       - /run
+    restart: unless-stopped
+
+  host-dind-forwarder:
+    profiles: ["ports"]
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    image: ${PROXY_IMAGE_NAME:-ai-sandbox-proxy}
+    container_name: host-dind-forwarder
+    command: ["haproxy", "-W", "-db", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 2s
+    networks:
+      - agent_net
+      - ingress_net
+    read_only: true
+    tmpfs:
+      - /run
+    user: proxy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   claude-agent:
@@ -108,3 +136,6 @@ networks:
     internal: true
   # External network used only by the proxy for internet egress.
   egress_net: {}
+  # Non-internal network used only to publish loopback ports from the hardened forwarder.
+  ingress_net:
+    name: ai-sandbox_ingress_net

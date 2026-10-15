@@ -54,8 +54,11 @@ pub(crate) fn write_compose_override(
             &workspace.mounts,
         );
         if let Some(port_range) = workspace.docker_ports {
-            write_docker_port_mapping(&mut contents, port_range);
             write_port_environment(&mut contents, port_range);
+            contents.push_str(&format!(
+                "    networks: !override\n      agent_net:\n        aliases:\n          - {}\n",
+                dind_network_alias(workspace)
+            ));
         }
         contents.push_str(
             "    depends_on: !override\n      docker-daemon-init:\n        condition: service_completed_successfully\n",
@@ -69,6 +72,51 @@ pub(crate) fn write_compose_override(
 
     fs::write(&output_path, contents).map_err(|error| error.to_string())?;
     Ok(output_path)
+}
+
+pub(crate) fn write_forwarder_override(
+    sandbox_dir: &Path,
+    workspaces: &[Workspace],
+) -> Result<Option<PathBuf>, String> {
+    let forwarded_workspaces = workspaces
+        .iter()
+        .filter_map(|workspace| workspace.docker_ports.map(|ports| (workspace, ports)))
+        .collect::<Vec<_>>();
+    if forwarded_workspaces.is_empty() {
+        return Ok(None);
+    }
+
+    let output_dir = sandbox_dir.join(".tmp").join("agent-box");
+    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+
+    let haproxy_config = render_haproxy_config(&forwarded_workspaces);
+    let config_hash = stable_hash(&haproxy_config);
+    let haproxy_path = output_dir.join(format!("haproxy-{config_hash:016x}.cfg"));
+    fs::write(&haproxy_path, haproxy_config).map_err(|error| error.to_string())?;
+
+    let override_path = output_dir.join("host-dind-forwarder.yml");
+    let contents = render_forwarder_override(&forwarded_workspaces, &haproxy_path, config_hash);
+    fs::write(&override_path, contents).map_err(|error| error.to_string())?;
+
+    Ok(Some(override_path))
+}
+
+fn render_forwarder_override(
+    workspaces: &[(&Workspace, PortRange)],
+    haproxy_path: &Path,
+    config_hash: u64,
+) -> String {
+    let mut contents = String::from("services:\n  host-dind-forwarder:\n    ports:\n");
+    for (_, port_range) in workspaces {
+        contents.push_str(&format!(
+            "      - \"127.0.0.1:{port_range}:{port_range}\"\n"
+        ));
+    }
+    contents.push_str(&format!(
+        "    volumes:\n      - type: bind\n        source: {}\n        target: /usr/local/etc/haproxy/haproxy.cfg\n        read_only: true\n    labels:\n      ai-sandbox.forwarder-config: \"{config_hash:016x}\"\n",
+        yaml_path(&haproxy_path)
+    ));
+    contents
 }
 
 pub(crate) fn runtime_project_name(workspace: &Workspace, docker_enabled: bool) -> String {
@@ -93,16 +141,44 @@ fn write_instruction_mount(contents: &mut String, agent: Agent, path: &Path) {
     ));
 }
 
-fn write_docker_port_mapping(contents: &mut String, port_range: PortRange) {
-    contents.push_str(&format!(
-        "    ports:\n      - \"127.0.0.1:{port_range}:{port_range}\"\n"
-    ));
+fn dind_network_alias(workspace: &Workspace) -> String {
+    format!(
+        "dind-{}",
+        sanitize_name(&workspace.name).to_ascii_lowercase()
+    )
 }
 
 fn write_port_environment(contents: &mut String, port_range: PortRange) {
     contents.push_str(&format!(
         "    environment:\n      SANDBOX_DOCKER_PORT_RANGE: \"{port_range}\"\n"
     ));
+}
+
+fn render_haproxy_config(workspaces: &[(&Workspace, PortRange)]) -> String {
+    let mut contents = String::from(
+        "global\n    log stdout format raw local0\n\ndefaults\n    log global\n    mode tcp\n    timeout connect 5s\n    timeout client 1h\n    timeout server 1h\n\nresolvers docker\n    nameserver dns 127.0.0.11:53\n    resolve_retries 3\n    timeout resolve 1s\n    timeout retry 1s\n    hold other 10s\n    hold refused 10s\n    hold nx 10s\n    hold timeout 10s\n    hold valid 10s\n    hold obsolete 10s\n",
+    );
+
+    for (workspace, port_range) in workspaces {
+        let alias = dind_network_alias(workspace);
+        let listener_name = sanitize_name(&workspace.name).to_ascii_lowercase();
+        for port in port_range.start..=port_range.end {
+            contents.push_str(&format!(
+                "\nlisten {listener_name}-{port}\n    bind :{port}\n    server dind {alias}:{port} resolvers docker init-addr libc,none\n"
+            ));
+        }
+    }
+
+    contents
+}
+
+fn stable_hash(value: &str) -> u64 {
+    value
+        .as_bytes()
+        .iter()
+        .fold(0xcbf29ce484222325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+        })
 }
 
 fn write_runtime_instructions(
@@ -231,18 +307,40 @@ mod tests {
     }
 
     #[test]
-    fn docker_port_config_binds_same_range_to_loopback() {
-        let port_range = PortRange {
+    fn forwarder_binds_workspace_range_to_loopback() {
+        let mut workspace = workspace("Platform");
+        workspace.docker_ports = Some(PortRange {
             start: 18000,
             end: 18099,
-        };
-        let mut contents = String::new();
+        });
 
-        write_docker_port_mapping(&mut contents, port_range);
-        write_port_environment(&mut contents, port_range);
+        let contents = render_forwarder_override(
+            &[(&workspace, workspace.docker_ports.unwrap())],
+            Path::new("/tmp/haproxy.cfg"),
+            42,
+        );
 
+        assert!(contents.contains("host-dind-forwarder:"));
         assert!(contents.contains("127.0.0.1:18000-18099:18000-18099"));
-        assert!(contents.contains("SANDBOX_DOCKER_PORT_RANGE: \"18000-18099\""));
+        assert!(contents.contains("source: \"/tmp/haproxy.cfg\""));
+        assert!(contents.contains("ai-sandbox.forwarder-config: \"000000000000002a\""));
+    }
+
+    #[test]
+    fn haproxy_forwards_each_port_to_workspace_dind_alias() {
+        let mut workspace = workspace("Platform API");
+        let port_range = PortRange {
+            start: 18000,
+            end: 18001,
+        };
+        workspace.docker_ports = Some(port_range);
+
+        let contents = render_haproxy_config(&[(&workspace, port_range)]);
+
+        assert!(contents.contains("listen platform-api-18000"));
+        assert!(contents.contains("server dind dind-platform-api:18000"));
+        assert!(contents.contains("listen platform-api-18001"));
+        assert!(contents.contains("server dind dind-platform-api:18001"));
     }
 
     #[test]

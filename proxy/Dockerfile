@@ -2,6 +2,7 @@ FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     squid \
+    haproxy \
     netcat-openbsd \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

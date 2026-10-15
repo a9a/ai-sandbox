@@ -6,7 +6,7 @@ compose_claude := compose_base + " --profile claude"
 compose_claude_docker := compose_docker + " --profile claude"
 compose_codex := compose_base + " --profile codex"
 compose_codex_docker := compose_docker + " --profile codex"
-compose_all := compose_docker + " --profile claude --profile codex"
+compose_all := compose_docker + " --profile claude --profile codex --profile ports"
 
 default:
     @just --list

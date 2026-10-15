@@ -4,7 +4,7 @@ COMPOSE_CLAUDE := $(COMPOSE_BASE) --profile claude
 COMPOSE_CLAUDE_DOCKER := $(COMPOSE_DOCKER) --profile claude
 COMPOSE_CODEX := $(COMPOSE_BASE) --profile codex
 COMPOSE_CODEX_DOCKER := $(COMPOSE_DOCKER) --profile codex
-COMPOSE_ALL := $(COMPOSE_DOCKER) --profile claude --profile codex
+COMPOSE_ALL := $(COMPOSE_DOCKER) --profile claude --profile codex --profile ports
 
 .PHONY: help \
 	claude-build codex-build claude-up claude-down claude-up-secure claude-down-secure claude-workspace claude-logs \

@@ -1,7 +1,9 @@
 mod compose;
 mod config;
 
-use compose::{container_context, runtime_project_name, write_compose_override};
+use compose::{
+    container_context, runtime_project_name, write_compose_override, write_forwarder_override,
+};
 use config::{load_config, Defaults, Mount, Workspace};
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 use std::env;
@@ -124,8 +126,9 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         workspace,
         docker_enabled,
     )?;
+    let forwarder_override = write_forwarder_override(&sandbox_dir, &config.workspaces)?;
 
-    start_shared_proxy(&sandbox_dir, rebuild)?;
+    start_shared_services(&sandbox_dir, forwarder_override.as_deref(), rebuild)?;
     start_stack(
         agent,
         &sandbox_dir,
@@ -233,11 +236,53 @@ fn sanitize_name(name: &str) -> String {
         .collect()
 }
 
-fn start_shared_proxy(sandbox_dir: &Path, rebuild: bool) -> Result<(), String> {
-    run_command(shared_proxy_command(sandbox_dir, rebuild))
+fn start_shared_services(
+    sandbox_dir: &Path,
+    forwarder_override: Option<&Path>,
+    rebuild: bool,
+) -> Result<(), String> {
+    if forwarder_override.is_none() {
+        run_command(remove_shared_forwarder_command(sandbox_dir))?;
+    }
+    run_command(shared_services_command(
+        sandbox_dir,
+        forwarder_override,
+        rebuild,
+    ))
 }
 
-fn shared_proxy_command(sandbox_dir: &Path, rebuild: bool) -> Command {
+fn shared_services_command(
+    sandbox_dir: &Path,
+    forwarder_override: Option<&Path>,
+    rebuild: bool,
+) -> Command {
+    let mut command = Command::new("docker");
+    command
+        .current_dir(sandbox_dir)
+        .arg("compose")
+        .arg("--project-name")
+        .arg("ai-sandbox")
+        .arg("-f")
+        .arg("docker-compose.yml");
+    if let Some(override_path) = forwarder_override {
+        command
+            .arg("-f")
+            .arg(override_path)
+            .arg("--profile")
+            .arg("ports");
+    }
+    command.arg("up").arg("-d").arg("--wait");
+    if rebuild {
+        command.arg("--build");
+    }
+    command.arg("proxy");
+    if forwarder_override.is_some() {
+        command.arg("host-dind-forwarder");
+    }
+    command
+}
+
+fn remove_shared_forwarder_command(sandbox_dir: &Path) -> Command {
     let mut command = Command::new("docker");
     command
         .current_dir(sandbox_dir)
@@ -246,13 +291,11 @@ fn shared_proxy_command(sandbox_dir: &Path, rebuild: bool) -> Command {
         .arg("ai-sandbox")
         .arg("-f")
         .arg("docker-compose.yml")
-        .arg("up")
-        .arg("-d")
-        .arg("--wait");
-    if rebuild {
-        command.arg("--build");
-    }
-    command.arg("proxy");
+        .arg("--profile")
+        .arg("ports")
+        .arg("rm")
+        .arg("-sf")
+        .arg("host-dind-forwarder");
     command
 }
 
@@ -440,17 +483,37 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_flag_is_forwarded_to_shared_proxy() {
-        let rebuild_args = shared_proxy_command(Path::new("/sandbox"), true)
+    fn rebuild_flag_is_forwarded_to_shared_services() {
+        let rebuild_args = shared_services_command(Path::new("/sandbox"), None, true)
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        let reuse_args = shared_proxy_command(Path::new("/sandbox"), false)
+        let reuse_args = shared_services_command(Path::new("/sandbox"), None, false)
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
 
         assert!(rebuild_args.iter().any(|argument| argument == "--build"));
         assert!(!reuse_args.iter().any(|argument| argument == "--build"));
+    }
+
+    #[test]
+    fn shared_forwarder_uses_generated_override_and_ports_profile() {
+        let args = shared_services_command(
+            Path::new("/sandbox"),
+            Some(Path::new("/tmp/forwarder.yml")),
+            false,
+        )
+        .get_args()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["-f", "/tmp/forwarder.yml"]));
+        assert!(args.windows(2).any(|args| args == ["--profile", "ports"]));
+        assert!(args
+            .iter()
+            .any(|argument| argument == "host-dind-forwarder"));
     }
 }
