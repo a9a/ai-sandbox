@@ -6,23 +6,30 @@ use std::path::{Path, PathBuf};
 pub(crate) fn write_compose_override(
     agent: Agent,
     sandbox_dir: &Path,
+    output_dir: &Path,
     defaults: &Defaults,
     workspace: &Workspace,
     docker_enabled: bool,
 ) -> Result<PathBuf, String> {
-    let output_dir = sandbox_dir.join(".tmp").join("agent-box");
-    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(output_dir).map_err(|error| error.to_string())?;
 
     let output_path = output_dir.join(format!(
         "{}-{}.yml",
         agent.command(),
-        sanitize_name(&workspace.name)
+        workspace_runtime_name(workspace)
     ));
     let instruction_path = if docker_enabled {
         workspace
             .docker_ports
             .map(|port_range| {
-                write_runtime_instructions(agent, sandbox_dir, defaults, workspace, port_range)
+                write_runtime_instructions(
+                    agent,
+                    sandbox_dir,
+                    output_dir,
+                    defaults,
+                    workspace,
+                    port_range,
+                )
             })
             .transpose()?
     } else {
@@ -75,7 +82,7 @@ pub(crate) fn write_compose_override(
 }
 
 pub(crate) fn write_forwarder_override(
-    sandbox_dir: &Path,
+    output_dir: &Path,
     workspaces: &[Workspace],
 ) -> Result<Option<PathBuf>, String> {
     let forwarded_workspaces = workspaces
@@ -86,8 +93,7 @@ pub(crate) fn write_forwarder_override(
         return Ok(None);
     }
 
-    let output_dir = sandbox_dir.join(".tmp").join("agent-box");
-    fs::create_dir_all(&output_dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(output_dir).map_err(|error| error.to_string())?;
 
     let haproxy_config = render_haproxy_config(&forwarded_workspaces);
     let config_hash = stable_hash(&haproxy_config);
@@ -114,13 +120,13 @@ fn render_forwarder_override(
     }
     contents.push_str(&format!(
         "    volumes:\n      - type: bind\n        source: {}\n        target: /usr/local/etc/haproxy/haproxy.cfg\n        read_only: true\n    labels:\n      ai-sandbox.forwarder-config: \"{config_hash:016x}\"\n",
-        yaml_path(&haproxy_path)
+        yaml_path(haproxy_path)
     ));
     contents
 }
 
 pub(crate) fn runtime_project_name(workspace: &Workspace, docker_enabled: bool) -> String {
-    let workspace_name = sanitize_name(&workspace.name).to_ascii_lowercase();
+    let workspace_name = workspace_runtime_name(workspace);
     let mode = if docker_enabled { "docker" } else { "plain" };
     format!("agent-box-{workspace_name}-{mode}")
 }
@@ -142,10 +148,11 @@ fn write_instruction_mount(contents: &mut String, agent: Agent, path: &Path) {
 }
 
 fn dind_network_alias(workspace: &Workspace) -> String {
-    format!(
-        "dind-{}",
-        sanitize_name(&workspace.name).to_ascii_lowercase()
-    )
+    format!("dind-{}", workspace_runtime_name(workspace))
+}
+
+fn workspace_runtime_name(workspace: &Workspace) -> String {
+    sanitize_name(workspace.runtime_name.as_deref().unwrap_or(&workspace.name)).to_ascii_lowercase()
 }
 
 fn write_port_environment(contents: &mut String, port_range: PortRange) {
@@ -184,19 +191,17 @@ fn stable_hash(value: &str) -> u64 {
 fn write_runtime_instructions(
     agent: Agent,
     sandbox_dir: &Path,
+    output_dir: &Path,
     defaults: &Defaults,
     workspace: &Workspace,
     port_range: PortRange,
 ) -> Result<PathBuf, String> {
-    let instruction_dir = sandbox_dir
-        .join(".tmp")
-        .join("agent-box")
-        .join("instructions");
+    let instruction_dir = output_dir.join("instructions");
     fs::create_dir_all(&instruction_dir).map_err(|error| error.to_string())?;
     let instruction_path = instruction_dir.join(format!(
         "{}-{}-{}",
         agent.command(),
-        sanitize_name(&workspace.name),
+        workspace_runtime_name(workspace),
         agent.instruction_filename()
     ));
 
@@ -265,6 +270,8 @@ mod tests {
             name: name.to_string(),
             mounts: Vec::new(),
             docker_ports: None,
+            display_name: None,
+            runtime_name: None,
         }
     }
 
@@ -280,6 +287,18 @@ mod tests {
             runtime_project_name(&workspace, false),
             "agent-box-kubernetes-api-plain"
         );
+    }
+
+    #[test]
+    fn explicit_runtime_name_disambiguates_dynamic_workspace() {
+        let mut workspace = workspace("current");
+        workspace.runtime_name = Some("current-deadbeef".to_string());
+
+        assert_eq!(
+            runtime_project_name(&workspace, true),
+            "agent-box-current-deadbeef-docker"
+        );
+        assert_eq!(dind_network_alias(&workspace), "dind-current-deadbeef");
     }
 
     #[test]

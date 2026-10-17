@@ -6,6 +6,9 @@ docker = true
 # claude_home = "/path/to/claude-home"
 # codex_home = "/path/to/codex-home"
 
+# The launch directory is always added automatically as the final workspace.
+# Define named workspaces when you need multiple mounts or host Docker ports.
+
 [[workspaces]]
 name = "workspace-a"
 docker_ports = "18000-18099"

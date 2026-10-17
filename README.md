@@ -7,8 +7,9 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 - `docker-compose.yml` - shared proxy, networks, secrets, and Claude/Codex services.
 - `docker-compose.docker.yml` - rootless Docker sidecar overlay for both agents.
 - `Dockerfile.agent` - shared Dockerfile with targets: `claude`, `claude-docker`, `codex`, `codex-docker`.
-- `justfile` - primary task runner for compose, firewall, and tests.
-- `Makefile` - fallback task runner with matching targets.
+- `cli/agent-box` - standalone Claude/Codex workspace launcher.
+- `justfile` - development tasks for image builds, tests, and cleanup.
+- `Makefile` - fallback development task runner with matching targets.
 - `.env` - pinned versions and image tags.
 - `proxy/squid.conf` - proxy policy (domain allowlist).
 - `proxy/allowed-domains.txt` - destination domain allowlist.
@@ -74,74 +75,22 @@ When set, both agent entrypoints apply these values via `git config --global` fo
 
 If `GITHUB_TOKEN` is present, the entrypoint writes `~/.git-credentials` and configures `credential.helper store` automatically.
 
-## Task Runner
+## Install Launchers
 
-Use `just` for local workflows:
-
-```bash
-just --list
-```
-
-Install `just` with your package manager if it is not already available. `Makefile` is still present with matching targets for environments that do not have `just` installed.
-
-Common commands:
+Build and install the standalone host launchers:
 
 ```bash
-just claude-up
-just claude-workspace
-just claude-logs
-just claude-down
+cargo build --manifest-path cli/agent-box/Cargo.toml --release
+install -d "$HOME/.local/bin"
+install -m 755 cli/agent-box/target/release/claude-box "$HOME/.local/bin/claude-box"
+install -m 755 cli/agent-box/target/release/codex-box "$HOME/.local/bin/codex-box"
 ```
 
-Per-agent `*-down` targets remove only the selected agent container. Shared proxy, Docker sidecar, and networks remain available to other agents; use `just down-all` to remove the complete shared stack.
+The same binaries work on Linux and macOS when built for the target platform. Ensure `$HOME/.local/bin` is in `PATH`; no repository checkout or `just` installation is required at runtime. Docker with Compose v2 must be available on the host.
 
-Docker-enabled profiles:
+## Configure Workspaces
 
-```bash
-just claude-docker-up
-just claude-docker-workspace
-just codex-docker-up
-just codex-docker-workspace
-```
-
-Build and test:
-
-```bash
-just claude-build
-just codex-build
-just test
-```
-
-Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar (`DOCKER_DIND_IMAGE`, default `docker:27-dind-rootless`) and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`).
-Both Docker-enabled agent images install `docker`, `docker compose`, and `helm` from one shared tooling stage in `Dockerfile.agent`.
-On Docker Desktop and other nested-container environments, `docker-daemon` runs with `privileged: true` so inner containers can mount `/proc` and start correctly.
-Services published by inner Docker containers are reachable from agent containers at `http://docker-daemon:<port>`.
-
-Example from a Docker-enabled agent workspace:
-
-```bash
-docker run -d --name nginx-proxy -p 8080:80 nginx:1.27-alpine
-curl http://docker-daemon:8080
-```
-
-Use `docker-daemon`, not `localhost`, from the agent container. `localhost` refers to the agent container itself.
-
-Agent project directory (`/home/devops/project`) is mounted from the host.
-
-- Default path is `.` (where `docker compose` is started).
-- Optional: set `AI_HOME_PATH` in `.env` (example: `/path/to/workspace`) to override.
-- In `claude-docker` and `codex-docker` profiles, the same path is mounted into `docker-daemon` so bind mounts work via remote `DOCKER_HOST`.
-
-For multi-project workspaces, mount a related project group with `AI_HOME_PATH`, enter the workspace, then start the agent from the desired subdirectory:
-
-```bash
-AI_HOME_PATH=/path/to/workspace just claude-docker-up
-just claude-docker-workspace
-cd /home/devops/project/app
-claude
-```
-
-For a host-side launcher, create the default user configuration:
+Create the default user configuration:
 
 ```bash
 mkdir -p "$HOME/.config/ai-sandbox"
@@ -167,14 +116,21 @@ name = "api"
 host = "/Users/aga/repos/product-x-api"
 ```
 
-Then run one of the Rust launchers from the host:
+The launcher reads only `~/.config/ai-sandbox/box.toml`. Configured workspaces appear first and the directory from which the launcher was invoked is always appended as the final `Current directory` option. A defaults-only file is therefore valid:
 
-```bash
-cargo run --manifest-path cli/agent-box/Cargo.toml --bin claude-box
-cargo run --manifest-path cli/agent-box/Cargo.toml --bin codex-box
+```toml
+[defaults]
+docker = true
 ```
 
-The launcher reads `box.toml` from `~/.config/ai-sandbox/box.toml`. Repository-local `box.toml` files are ignored. The launcher asks for a workspace and mount context, generates a Compose override for the selected host directories, and opens Claude or Codex in `/home/devops/project/<workspace-name>/<mount-name>`. The same paths are mounted in the workspace DinD daemon so inner bind mounts resolve correctly. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. It defaults to Docker-enabled profiles; pass `--no-docker` to use the non-Docker stack or `--build` to rebuild images before opening the agent.
+Run a launcher from any project directory:
+
+```bash
+claude-box
+codex-box
+```
+
+The selected host directories are mounted under `/home/devops/project/<workspace-name>/<mount-name>`. The same paths are mounted in that workspace's DinD daemon so inner bind mounts resolve correctly. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. Docker support is enabled by default; pass `--no-docker` for the non-Docker stack or `--build` to rebuild images before opening the agent.
 
 Launcher agent homes are isolated by default under `~/.ai-sandbox/claude` and `~/.ai-sandbox/codex`; the launcher creates them with mode `0700`. To explicitly share existing host configuration, set `claude_home` or `codex_home` in `[defaults]`, or export `CLAUDE_HOME_PATH` / `CODEX_HOME_PATH`.
 
@@ -182,49 +138,42 @@ Launcher runtimes are scoped by workspace. Each workspace gets persistent agent 
 
 Optional `docker_ports` publishes the same port range through the shared `host-dind-forwarder` to host loopback. The forwarder is the only component connected to its non-internal ingress network; agents and DinD daemons remain on internal networks. Ranges must use unprivileged ports and cannot overlap between workspaces. For example, `docker_ports = "18000-18099"` makes an inner `docker run -p 18080:80 ...` service available at `http://localhost:18080` without exposing it beyond the host.
 
-For workspaces with `docker_ports`, the launcher sets `SANDBOX_DOCKER_PORT_RANGE` in the agent and adds runtime guidance from `instructions/docker-ports.md` to the agent's global instruction file. Existing `AGENTS.md` or `CLAUDE.md` content from the selected agent home is preserved in the generated file, and the source file is not modified. The generated instruction applies to every mounted project opened in that workspace runtime. Extend the Markdown template to add shared runtime guidance; `{{docker_port_range}}` and `{{example_port}}` are replaced by the launcher.
+For workspaces with `docker_ports`, the launcher sets `SANDBOX_DOCKER_PORT_RANGE` in the agent and adds bundled port guidance to the agent's global instruction file. Existing `AGENTS.md` or `CLAUDE.md` content from the selected agent home is preserved in the generated file, and the source file is not modified. The generated instruction applies to every mounted project opened in that workspace runtime. Repository developers can change `instructions/docker-ports.md` and rebuild the launcher to update this embedded guidance.
 
 The generated agent container runs an idle keepalive process. Every interactive Claude/Codex session is started through the matching entrypoint so secrets are loaded from Docker secret files for that session.
 
-`box.toml` is required in the user configuration directory unless an explicit path is provided.
+`box.toml` is required, but it does not need to contain configured workspaces. The automatic current-directory workspace does not publish DinD ports; add a named workspace with `docker_ports` when host access to inner services is needed.
 
-For faster daily use, build the host launchers once:
+## Runtime Assets
 
-```bash
-cargo build --manifest-path cli/agent-box/Cargo.toml --release
-```
+Compose files, Dockerfiles, proxy configuration, entrypoints, and agent instructions are embedded in each launcher binary. On first use they are materialized into a versioned cache directory:
 
-Then run the release binaries directly:
+- Linux: `${XDG_CACHE_HOME:-$HOME/.cache}/ai-sandbox/runtime/`
+- macOS: `$HOME/Library/Caches/ai-sandbox/runtime/`
 
-```bash
-./cli/agent-box/target/release/claude-box
-./cli/agent-box/target/release/codex-box
-```
+Generated Compose overrides and instruction files are stored under the adjacent `ai-sandbox/generated/` directory. Set `AI_SANDBOX_DIR` only during launcher development to use runtime assets from a repository checkout instead of the embedded copy.
 
-Optional shell aliases:
+Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`). Both images install `docker`, `docker compose`, and `helm` from the shared tooling stage in `Dockerfile.agent`. Services published by inner Docker containers are reachable from the agent at `http://docker-daemon:<port>` and, for configured `docker_ports`, from host loopback through `host-dind-forwarder`.
+
+`just` and `make` are development-only helpers:
 
 ```bash
-alias claude-box='/path/to/ai-sandbox/cli/agent-box/target/release/claude-box'
-alias codex-box='/path/to/ai-sandbox/cli/agent-box/target/release/codex-box'
-```
-
-Fish aliases:
-
-```fish
-alias claude-box '/path/to/ai-sandbox/cli/agent-box/target/release/claude-box'
-alias codex-box '/path/to/ai-sandbox/cli/agent-box/target/release/codex-box'
+just claude-build
+just codex-build
+just test
+just down-all
 ```
 
 Claude home data (`/home/devops/.claude`) is persisted via host bind mount.
 The entrypoint auto-creates `/home/devops/.claude/.claude.json` and links `/home/devops/.claude.json` to it.
 
-- Default path is `$PWD/.claude` (where `docker compose` is started).
-- Optional: set `CLAUDE_HOME_PATH` in `.env` (example: `/path/to/claude-home`) to override.
+- Launcher default: `~/.ai-sandbox/claude`.
+- Override with `claude_home` in `box.toml` or `CLAUDE_HOME_PATH`.
 
 Codex home data (`/home/devops/.codex`) is persisted in a host directory bind mount.
 
-- Default path is `$PWD/.codex` (where `docker compose` is started).
-- Optional: set `CODEX_HOME_PATH` in `.env` (example: `/path/to/codex-home`) to override.
+- Launcher default: `~/.ai-sandbox/codex`.
+- Override with `codex_home` in `box.toml` or `CODEX_HOME_PATH`.
 
 ## Build Images
 
@@ -273,15 +222,11 @@ docker compose -f docker-compose.yml up -d --build proxy
 - Proxy is attached to both `agent_net` and `egress_net`.
 - Squid denies `CONNECT` to literal IP targets.
 - Use host firewall for hard enforcement (`agent -> proxy:3128` only).
-- In `claude-docker-*-secure` and `codex-docker-*-secure` modes no extra network exception is needed for Docker (Unix socket is used).
+- Docker communication uses a Unix socket, so it needs no additional network exception.
 
-Apply/remove host firewall:
+Remove a previously applied host firewall policy:
 
 ```bash
-just firewall-apply-claude
-just firewall-apply-claude-docker
-just firewall-apply-codex
-just firewall-apply-codex-docker
 just firewall-remove
 ```
 

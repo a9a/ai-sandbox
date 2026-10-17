@@ -1,12 +1,6 @@
 set dotenv-load := true
 
-compose_base := "docker compose -f docker-compose.yml"
-compose_docker := compose_base + " -f docker-compose.docker.yml"
-compose_claude := compose_base + " --profile claude"
-compose_claude_docker := compose_docker + " --profile claude"
-compose_codex := compose_base + " --profile codex"
-compose_codex_docker := compose_docker + " --profile codex"
-compose_all := compose_docker + " --profile claude --profile codex --profile ports"
+compose_all := "docker compose -f docker-compose.yml -f docker-compose.docker.yml --profile claude --profile codex --profile ports"
 
 default:
     @just --list
@@ -16,92 +10,6 @@ claude-build:
 
 codex-build:
     ./build-codex.sh
-
-claude-up:
-    {{compose_claude}} up -d --build claude-agent
-
-claude-down:
-    {{compose_claude}} rm -sf claude-agent
-
-claude-up-secure: claude-up firewall-apply-claude
-
-claude-down-secure:
-    -./scripts/remove-egress-firewall.sh
-    {{compose_claude}} rm -sf claude-agent
-
-claude-workspace:
-    {{compose_claude}} exec --user devops -e HOME=/home/devops -w /home/devops/project claude-agent bash
-
-claude-logs:
-    {{compose_claude}} logs -f proxy claude-agent
-
-claude-docker-up:
-    {{compose_claude_docker}} up -d --build claude-agent
-
-claude-docker-down:
-    {{compose_claude_docker}} rm -sf claude-agent
-
-claude-docker-up-secure: claude-docker-up firewall-apply-claude-docker
-
-claude-docker-down-secure:
-    -./scripts/remove-egress-firewall.sh
-    {{compose_claude_docker}} rm -sf claude-agent
-
-claude-docker-workspace:
-    {{compose_claude_docker}} exec --user devops -e HOME=/home/devops -w /home/devops/project claude-agent bash
-
-claude-docker-logs:
-    {{compose_claude_docker}} logs -f proxy docker-daemon claude-agent
-
-codex-up:
-    {{compose_codex}} up -d --build codex-agent
-
-codex-down:
-    {{compose_codex}} rm -sf codex-agent
-
-codex-up-secure: codex-up firewall-apply-codex
-
-codex-down-secure:
-    -./scripts/remove-egress-firewall.sh
-    {{compose_codex}} rm -sf codex-agent
-
-codex-workspace:
-    {{compose_codex}} exec --user devops -e HOME=/home/devops -w /home/devops/project codex-agent bash
-
-codex-logs:
-    {{compose_codex}} logs -f proxy codex-agent
-
-codex-docker-up:
-    {{compose_codex_docker}} up -d --build codex-agent
-
-codex-docker-down:
-    {{compose_codex_docker}} rm -sf codex-agent
-
-codex-docker-up-secure: codex-docker-up firewall-apply-codex-docker
-
-codex-docker-down-secure:
-    -./scripts/remove-egress-firewall.sh
-    {{compose_codex_docker}} rm -sf codex-agent
-
-codex-docker-workspace:
-    {{compose_codex_docker}} exec --user devops -e HOME=/home/devops -w /home/devops/project codex-agent bash
-
-codex-docker-logs:
-    {{compose_codex_docker}} logs -f proxy docker-daemon codex-agent
-
-firewall-apply: firewall-apply-claude
-
-firewall-apply-claude:
-    ./scripts/apply-egress-firewall.sh ai-sandbox-claude-agent ai-sandbox-proxy
-
-firewall-apply-claude-docker:
-    ./scripts/apply-egress-firewall.sh ai-sandbox-claude-agent ai-sandbox-proxy
-
-firewall-apply-codex:
-    ./scripts/apply-egress-firewall.sh ai-sandbox-codex-agent ai-sandbox-proxy
-
-firewall-apply-codex-docker:
-    ./scripts/apply-egress-firewall.sh ai-sandbox-codex-agent ai-sandbox-proxy
 
 firewall-remove:
     ./scripts/remove-egress-firewall.sh

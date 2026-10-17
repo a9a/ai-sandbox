@@ -10,11 +10,6 @@ x-github-secret: &github-secret
   source: github_token
   target: github_token
 
-x-project-volume: &project-volume
-  type: bind
-  source: ${AI_HOME_PATH:-.}
-  target: /home/devops/project
-
 x-agent-common: &agent-common
   depends_on:
     proxy:
@@ -91,7 +86,6 @@ services:
       - source: anthropic_api_key
         target: anthropic_api_key
     volumes:
-      - *project-volume
       - type: bind
         source: ${CLAUDE_HOME_PATH:-${PWD}/.claude}
         target: /home/devops/.claude
@@ -116,7 +110,6 @@ services:
       - source: openai_api_key
         target: openai_api_key
     volumes:
-      - *project-volume
       - type: bind
         source: ${CODEX_HOME_PATH:-${PWD}/.codex}
         target: /home/devops/.codex

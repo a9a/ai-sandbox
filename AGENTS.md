@@ -6,22 +6,19 @@ This repository defines a Docker sandbox for AI coding agents. Top-level
 Compose files define the stacks: `docker-compose.yml` contains the proxy and
 Claude/Codex services, while `docker-compose.docker.yml` enables the Docker
 sidecar profile.
-Agent images are built from `Dockerfile.claude`,
-`Dockerfile.codex`, and `Dockerfile.codex.docker`. Proxy policy lives in
+Agent images are built from the targets in `Dockerfile.agent`. Proxy policy lives in
 `proxy/`, operational scripts live in `scripts/`, and CI definitions live in
 `.github/workflows/`. Integration test fixtures are under `.ci/`.
 
 ## Build, Test, and Development Commands
 
-Run `just --list` to list supported workflows. `Makefile` mirrors the same
-targets for environments without `just`. Common commands:
+Run `just --list` to list development workflows. `Makefile` mirrors the same
+targets for environments without `just`. Runtime sessions are started with the
+installed `claude-box` or `codex-box` launcher. Common development commands:
 
 - `just claude-build` / `just codex-build`: build the agent images.
-- `just claude-workspace` / `just codex-workspace`: enter a running workspace.
-- `just claude-up-secure` / `just codex-up-secure`: start a stack and apply the
-  host egress firewall.
-- `just codex-docker-up`: start Codex with the rootless Docker sidecar.
 - `just test`: run both Claude and Codex integration suites.
+- `just down-all`: remove repository-development stacks.
 - `./scripts/test-integration.sh codex`: run one integration suite directly.
 
 ## Coding Style & Naming Conventions

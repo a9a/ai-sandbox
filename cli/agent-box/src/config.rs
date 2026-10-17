@@ -5,10 +5,13 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone)]
 pub(crate) struct Workspace {
     pub(crate) name: String,
     pub(crate) mounts: Vec<Mount>,
     pub(crate) docker_ports: Option<PortRange>,
+    pub(crate) display_name: Option<String>,
+    pub(crate) runtime_name: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -29,6 +32,7 @@ impl fmt::Display for PortRange {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Mount {
     pub(crate) name: String,
     pub(crate) host: PathBuf,
@@ -95,6 +99,8 @@ fn parse_config(config_path: &Path, contents: &str) -> Result<Config, String> {
                     name: String::new(),
                     mounts: Vec::new(),
                     docker_ports: None,
+                    display_name: None,
+                    runtime_name: None,
                 });
                 section = Section::Workspace;
                 continue;
@@ -188,13 +194,6 @@ fn parse_config(config_path: &Path, contents: &str) -> Result<Config, String> {
 }
 
 fn validate_config(config_path: &Path, workspaces: &[Workspace]) -> Result<(), String> {
-    if workspaces.is_empty() {
-        return Err(format!(
-            "no workspaces configured in {}",
-            config_path.display()
-        ));
-    }
-
     let mut runtime_names = HashMap::new();
     let mut workspace_port_ranges = Vec::new();
     for workspace in workspaces {
@@ -445,5 +444,13 @@ host = "/workspace/api"
         };
 
         assert!(error.contains("ports 1024-65535"));
+    }
+
+    #[test]
+    fn allows_defaults_without_configured_workspaces() {
+        let config = parse_config(Path::new("box.toml"), "[defaults]\ndocker = true\n").unwrap();
+
+        assert!(config.workspaces.is_empty());
+        assert!(config.defaults.docker);
     }
 }

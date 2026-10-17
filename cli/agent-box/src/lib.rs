@@ -1,5 +1,6 @@
 mod compose;
 mod config;
+mod runtime;
 
 use compose::{
     container_context, runtime_project_name, write_compose_override, write_forwarder_override,
@@ -105,8 +106,15 @@ fn run_inner(agent: Agent) -> Result<(), String> {
 
     let cli_no_docker = args.iter().any(|arg| arg == "--no-docker");
     let rebuild = args.iter().any(|arg| arg == "--build");
-    let sandbox_dir = find_sandbox_dir()?;
-    let config = load_config()?;
+    let launch_dir = env::current_dir()
+        .map_err(|error| format!("cannot determine current directory: {error}"))?
+        .canonicalize()
+        .map_err(|error| format!("cannot resolve current directory: {error}"))?;
+    let runtime_paths = runtime::prepare()?;
+    let mut config = load_config()?;
+    config
+        .workspaces
+        .push(current_directory_workspace(&launch_dir));
     ensure_agent_home(agent, &config.defaults)?;
     let docker_enabled = config.defaults.docker && !cli_no_docker;
     let workspace = choose_workspace(&config.workspaces)?;
@@ -121,17 +129,23 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     }
     let override_path = write_compose_override(
         agent,
-        &sandbox_dir,
+        &runtime_paths.assets,
+        &runtime_paths.generated,
         &config.defaults,
         workspace,
         docker_enabled,
     )?;
-    let forwarder_override = write_forwarder_override(&sandbox_dir, &config.workspaces)?;
+    let forwarder_override =
+        write_forwarder_override(&runtime_paths.generated, &config.workspaces)?;
 
-    start_shared_services(&sandbox_dir, forwarder_override.as_deref(), rebuild)?;
+    start_shared_services(
+        &runtime_paths.assets,
+        forwarder_override.as_deref(),
+        rebuild,
+    )?;
     start_stack(
         agent,
-        &sandbox_dir,
+        &runtime_paths.assets,
         &override_path,
         &config.defaults,
         &project_name,
@@ -140,7 +154,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     )?;
     exec_agent(
         agent,
-        &sandbox_dir,
+        &runtime_paths.assets,
         &override_path,
         &config.defaults,
         &project_name,
@@ -153,8 +167,11 @@ fn print_help(agent: Agent) {
     println!("Usage: {} [--no-docker] [--build]", agent_box_name(agent));
     println!();
     println!("Reads workspace definitions from ~/.config/ai-sandbox/box.toml by default.");
+    println!("The current directory is always available as the last workspace option.");
+    println!("Runtime Compose and build assets are embedded in the executable.");
     println!("By default, starts existing images with docker compose up -d.");
     println!("Pass --build to rebuild images before opening the agent.");
+    println!("Set AI_SANDBOX_DIR only to use runtime assets from a development checkout.");
 }
 
 fn agent_box_name(agent: Agent) -> &'static str {
@@ -164,22 +181,31 @@ fn agent_box_name(agent: Agent) -> &'static str {
     }
 }
 
-fn find_sandbox_dir() -> Result<PathBuf, String> {
-    if let Some(path) = env::var_os("AI_SANDBOX_DIR") {
-        return Ok(PathBuf::from(path));
+fn current_directory_workspace(path: &Path) -> Workspace {
+    let mount_name = path
+        .file_name()
+        .filter(|name| !name.is_empty())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "project".to_string());
+    Workspace {
+        name: "current".to_string(),
+        mounts: vec![Mount {
+            name: mount_name,
+            host: path.to_path_buf(),
+        }],
+        docker_ports: None,
+        display_name: Some("Current directory".to_string()),
+        runtime_name: Some(format!("current-{:016x}", stable_path_hash(path))),
     }
+}
 
-    let mut current = env::current_dir().map_err(|error| error.to_string())?;
-    loop {
-        if current.join("docker-compose.yml").is_file() && current.join("Makefile").is_file() {
-            return Ok(current);
-        }
-        if !current.pop() {
-            break;
-        }
-    }
-
-    Err("run from ai-sandbox or set AI_SANDBOX_DIR".to_string())
+fn stable_path_hash(path: &Path) -> u64 {
+    path.to_string_lossy()
+        .as_bytes()
+        .iter()
+        .fold(0xcbf29ce484222325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+        })
 }
 
 fn agent_home(agent: Agent, defaults: &Defaults) -> Option<PathBuf> {
@@ -307,6 +333,13 @@ fn choose_workspace(workspaces: &[Workspace]) -> Result<&Workspace, String> {
     let options = workspaces
         .iter()
         .map(|workspace| {
+            if let Some(display_name) = workspace.display_name.as_deref() {
+                return format!(
+                    "{:<18} {}",
+                    display_name,
+                    workspace.mounts[0].host.display()
+                );
+            }
             let mounts = workspace
                 .mounts
                 .iter()
@@ -326,7 +359,8 @@ fn choose_mount(workspace: &Workspace) -> Result<&Mount, String> {
     }
 
     let options = format_mount_options(&workspace.mounts);
-    let selected = choose_from_menu(&format!("{} context", workspace.name), &options)?;
+    let workspace_name = workspace.display_name.as_deref().unwrap_or(&workspace.name);
+    let selected = choose_from_menu(&format!("{workspace_name} context"), &options)?;
     Ok(&workspace.mounts[selected])
 }
 
@@ -515,5 +549,18 @@ mod tests {
         assert!(args
             .iter()
             .any(|argument| argument == "host-dind-forwarder"));
+    }
+
+    #[test]
+    fn current_directories_get_distinct_stable_runtimes() {
+        let first = current_directory_workspace(Path::new("/work/team/api"));
+        let repeated = current_directory_workspace(Path::new("/work/team/api"));
+        let second = current_directory_workspace(Path::new("/other/team/api"));
+
+        assert_eq!(first.runtime_name, repeated.runtime_name);
+        assert_ne!(first.runtime_name, second.runtime_name);
+        assert_eq!(first.mounts[0].name, "api");
+        assert_eq!(first.mounts[0].host, Path::new("/work/team/api"));
+        assert_eq!(first.display_name.as_deref(), Some("Current directory"));
     }
 }
