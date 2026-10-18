@@ -18,29 +18,18 @@ pub(crate) fn write_compose_override(
         agent.command(),
         workspace_runtime_name(workspace)
     ));
-    let instruction_path = if docker_enabled {
-        workspace
-            .docker_ports
-            .map(|port_range| {
-                write_runtime_instructions(
-                    agent,
-                    sandbox_dir,
-                    output_dir,
-                    defaults,
-                    workspace,
-                    port_range,
-                )
-            })
-            .transpose()?
-    } else {
-        None
-    };
+    let instruction_path = write_runtime_instructions(
+        agent,
+        sandbox_dir,
+        output_dir,
+        defaults,
+        workspace,
+        docker_enabled,
+    )?;
 
     let mut contents = String::from("services:\n");
     write_service_mounts(&mut contents, agent.service(), workspace);
-    if let Some(path) = instruction_path.as_deref() {
-        write_instruction_mount(&mut contents, agent, path);
-    }
+    write_instruction_mount(&mut contents, agent, &instruction_path);
     contents.push_str("    command: [\"sleep\", \"infinity\"]\n");
     if let Some(port_range) = workspace.docker_ports.filter(|_| docker_enabled) {
         write_port_environment(&mut contents, port_range);
@@ -239,12 +228,13 @@ fn write_runtime_instructions(
     output_dir: &Path,
     defaults: &Defaults,
     workspace: &Workspace,
-    port_range: PortRange,
+    docker_enabled: bool,
 ) -> Result<PathBuf, String> {
     let instruction_dir = output_dir.join("instructions");
     fs::create_dir_all(&instruction_dir).map_err(|error| error.to_string())?;
+    let mode = if docker_enabled { "docker" } else { "plain" };
     let instruction_path = instruction_dir.join(format!(
-        "{}-{}-{}",
+        "{}-{}-{mode}-{}",
         agent.command(),
         workspace_runtime_name(workspace),
         agent.instruction_filename()
@@ -256,25 +246,48 @@ fn write_runtime_instructions(
         .map(|path| fs::read_to_string(&path).map_err(|error| error.to_string()))
         .transpose()?
         .unwrap_or_default();
-    let template_path = sandbox_dir.join("instructions").join("docker-ports.md");
-    let template = fs::read_to_string(&template_path)
-        .map_err(|error| format!("cannot read {}: {error}", template_path.display()))?;
-    let contents = combined_runtime_instructions(&existing_instructions, &template, port_range);
+    let proxy_template_path = sandbox_dir.join("instructions").join("proxy-allowlist.md");
+    let proxy_template = fs::read_to_string(&proxy_template_path)
+        .map_err(|error| format!("cannot read {}: {error}", proxy_template_path.display()))?;
+    let port_range = workspace.docker_ports.filter(|_| docker_enabled);
+    let docker_template = port_range
+        .map(|_| {
+            let path = sandbox_dir.join("instructions").join("docker-ports.md");
+            fs::read_to_string(&path)
+                .map_err(|error| format!("cannot read {}: {error}", path.display()))
+        })
+        .transpose()?;
+    let contents = combined_runtime_instructions(
+        &existing_instructions,
+        &proxy_template,
+        docker_template.as_deref().zip(port_range),
+    );
     fs::write(&instruction_path, contents).map_err(|error| error.to_string())?;
     Ok(instruction_path)
 }
 
-fn combined_runtime_instructions(existing: &str, template: &str, port_range: PortRange) -> String {
+fn combined_runtime_instructions(
+    existing: &str,
+    proxy_template: &str,
+    docker_template: Option<(&str, PortRange)>,
+) -> String {
     let mut contents = existing.trim_end().to_string();
+    append_instruction_section(&mut contents, proxy_template);
+    if let Some((template, port_range)) = docker_template {
+        let rendered = template
+            .replace("{{docker_port_range}}", &port_range.to_string())
+            .replace("{{example_port}}", &port_range.start.to_string());
+        append_instruction_section(&mut contents, &rendered);
+    }
+    contents.push('\n');
+    contents
+}
+
+fn append_instruction_section(contents: &mut String, section: &str) {
     if !contents.is_empty() {
         contents.push_str("\n\n");
     }
-    let rendered = template
-        .replace("{{docker_port_range}}", &port_range.to_string())
-        .replace("{{example_port}}", &port_range.start.to_string());
-    contents.push_str(rendered.trim());
-    contents.push('\n');
-    contents
+    contents.push_str(section.trim());
 }
 
 fn write_service_mounts(contents: &mut String, service: &str, workspace: &Workspace) {
@@ -483,15 +496,33 @@ mod tests {
     fn runtime_instructions_preserve_user_instructions() {
         let instructions = combined_runtime_instructions(
             "# Existing instructions\n\n- Keep this rule.\n",
-            "Use `$SANDBOX_DOCKER_PORT_RANGE={{docker_port_range}}`. Example: `docker run -p {{example_port}}:80 nginx`.",
-            PortRange {
-                start: 18000,
-                end: 18099,
-            },
+            "Tell the user to run the agent-box launcher with `squid-reload`.",
+            Some((
+                "Use `$SANDBOX_DOCKER_PORT_RANGE={{docker_port_range}}`. Example: `docker run -p {{example_port}}:80 nginx`.",
+                PortRange {
+                    start: 18000,
+                    end: 18099,
+                },
+            )),
         );
 
         assert!(instructions.starts_with("# Existing instructions"));
+        assert!(instructions.contains("agent-box launcher with `squid-reload`"));
         assert!(instructions.contains("$SANDBOX_DOCKER_PORT_RANGE"));
         assert!(instructions.contains("docker run -p 18000:80 nginx"));
+    }
+
+    #[test]
+    fn runtime_instructions_always_include_proxy_guidance() {
+        let instructions = combined_runtime_instructions(
+            "",
+            "Run the agent-box launcher with `squid-reload`.",
+            None,
+        );
+
+        assert_eq!(
+            instructions,
+            "Run the agent-box launcher with `squid-reload`.\n"
+        );
     }
 }

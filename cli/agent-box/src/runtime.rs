@@ -31,6 +31,10 @@ const ASSETS: &[Asset] = &[
         contents: include_bytes!("../../../instructions/docker-ports.md"),
     },
     Asset {
+        path: "instructions/proxy-allowlist.md",
+        contents: include_bytes!("../../../instructions/proxy-allowlist.md"),
+    },
+    Asset {
         path: "proxy/Dockerfile",
         contents: include_bytes!("../../../proxy/Dockerfile"),
     },
@@ -170,6 +174,7 @@ mod tests {
         assert!(paths.contains(&"docker-compose.yml"));
         assert!(paths.contains(&"docker-compose.docker.yml"));
         assert!(paths.contains(&"Dockerfile.agent"));
+        assert!(paths.contains(&"instructions/proxy-allowlist.md"));
         assert!(paths.contains(&"proxy/Dockerfile"));
         assert!(paths.contains(&"scripts/claude-entrypoint.sh"));
         assert!(paths.contains(&"scripts/codex-entrypoint.sh"));
