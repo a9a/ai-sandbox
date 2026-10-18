@@ -116,7 +116,7 @@ name = "api"
 host = "/Users/aga/repos/product-x-api"
 ```
 
-The launcher reads only `~/.config/ai-sandbox/box.toml`. Configured workspaces appear first and the directory from which the launcher was invoked is always appended as the final `Current directory` option. A defaults-only file is therefore valid:
+The launcher reads workspace settings from `~/.config/ai-sandbox/box.toml`. Configured workspaces appear first and the directory from which the launcher was invoked is always appended as the final `Current directory` option. A defaults-only file is therefore valid:
 
 ```toml
 [defaults]
@@ -152,6 +152,10 @@ For workspaces with `docker_ports`, the launcher sets `SANDBOX_DOCKER_PORT_RANGE
 The generated agent container runs an idle keepalive process. Every interactive Claude/Codex session is started through the matching entrypoint so secrets are loaded from Docker secret files for that session.
 
 Codex sessions disable the CLI's nested Bubblewrap sandbox and approval prompts because the agent already runs inside the repository's Docker sandbox. This avoids requiring unprivileged user namespaces inside the agent container; filesystem mounts, network access, and Docker access remain constrained by the outer Compose stack.
+
+Create `~/.config/ai-sandbox/allowed-domains.txt` to extend the built-in proxy allowlist without modifying the repository. Use one domain or suffix per line, with `.domain.tld` matching subdomains. The launcher combines both lists, mounts the result read-only into the shared Squid container, and recreates the proxy on the next launch when the contents change. Because the proxy is shared, user entries apply to every workspace.
+
+Run `codex-box squid-reload` or `claude-box squid-reload` to apply allowlist changes immediately without selecting a workspace or opening an agent session. The command recreates only the shared proxy container.
 
 `box.toml` is required, but it does not need to contain configured workspaces. The automatic current-directory workspace does not publish DinD ports; add a named workspace with `docker_ports` when host access to inner services is needed.
 

@@ -51,15 +51,21 @@ pub(crate) struct Config {
 }
 
 pub(crate) fn load_config() -> Result<Config, String> {
-    let config_path = env::var_os("HOME")
-        .map(PathBuf::from)
-        .map(|home| home.join(".config").join("ai-sandbox").join("box.toml"))
-        .ok_or_else(|| {
-            "cannot locate ~/.config/ai-sandbox/box.toml; HOME is not set".to_string()
-        })?;
+    let config_path = config_directory()?.join("box.toml");
     let contents = fs::read_to_string(&config_path)
         .map_err(|error| format!("cannot read {}: {error}", config_path.display()))?;
     parse_config(&config_path, &contents)
+}
+
+pub(crate) fn user_allowlist_path() -> Result<PathBuf, String> {
+    Ok(config_directory()?.join("allowed-domains.txt"))
+}
+
+fn config_directory() -> Result<PathBuf, String> {
+    env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|home| home.join(".config").join("ai-sandbox"))
+        .ok_or_else(|| "cannot locate ~/.config/ai-sandbox; HOME is not set".to_string())
 }
 
 fn parse_config(config_path: &Path, contents: &str) -> Result<Config, String> {

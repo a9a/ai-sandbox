@@ -4,9 +4,9 @@ mod runtime;
 
 use compose::{
     runtime_project_name, workspace_container_context, write_compose_override,
-    write_forwarder_override, write_shared_dind_override,
+    write_forwarder_override, write_proxy_override, write_shared_dind_override,
 };
-use config::{load_config, Defaults, Mount, Workspace};
+use config::{load_config, user_allowlist_path, Defaults, Mount, Workspace};
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 use std::collections::BTreeSet;
 use std::env;
@@ -118,6 +118,12 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         print_help(agent);
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("squid-reload") {
+        if args.len() != 1 {
+            return Err(format!("usage: {} squid-reload", agent_box_name(agent)));
+        }
+        return reload_proxy();
+    }
 
     let cli_no_docker = args.iter().any(|arg| arg == "--no-docker");
     let rebuild = args.iter().any(|arg| arg == "--build");
@@ -175,6 +181,11 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     )?;
     let forwarder_override =
         write_forwarder_override(&runtime_paths.generated, &config.workspaces)?;
+    let proxy_override = write_proxy_override(
+        &runtime_paths.generated,
+        &runtime_paths.assets.join("proxy/allowed-domains.txt"),
+        &user_allowlist_path()?,
+    )?;
     let dind_override = if docker_enabled {
         let mut dind_workspaces = configured_workspaces;
         let dynamic_workspaces = dynamic_dind_workspaces(&dynamic_mounts)
@@ -194,6 +205,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
 
     start_shared_services(
         &runtime_paths.assets,
+        &proxy_override,
         forwarder_override.as_deref(),
         dind_override.as_deref(),
         rebuild,
@@ -220,6 +232,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
 
 fn print_help(agent: Agent) {
     println!("Usage: {} [--no-docker] [--build]", agent_box_name(agent));
+    println!("       {} squid-reload", agent_box_name(agent));
     println!();
     println!("Reads workspace definitions from ~/.config/ai-sandbox/box.toml by default.");
     println!("The current directory is always available as the last workspace option.");
@@ -228,7 +241,18 @@ fn print_help(agent: Agent) {
     println!("Unregistered current directories can use Docker with or without bind mounts.");
     println!("By default, starts existing images with docker compose up -d.");
     println!("Pass --build to rebuild images before opening the agent.");
+    println!("Run squid-reload to apply the user proxy allowlist without opening an agent.");
     println!("Set AI_SANDBOX_DIR only to use runtime assets from a development checkout.");
+}
+
+fn reload_proxy() -> Result<(), String> {
+    let runtime_paths = runtime::prepare()?;
+    let proxy_override = write_proxy_override(
+        &runtime_paths.generated,
+        &runtime_paths.assets.join("proxy/allowed-domains.txt"),
+        &user_allowlist_path()?,
+    )?;
+    run_command(proxy_reload_command(&runtime_paths.assets, &proxy_override))
 }
 
 fn agent_box_name(agent: Agent) -> &'static str {
@@ -402,6 +426,7 @@ fn sanitize_name(name: &str) -> String {
 
 fn start_shared_services(
     sandbox_dir: &Path,
+    proxy_override: &Path,
     forwarder_override: Option<&Path>,
     dind_override: Option<&Path>,
     rebuild: bool,
@@ -415,6 +440,7 @@ fn start_shared_services(
     }
     run_command(shared_services_command(
         sandbox_dir,
+        proxy_override,
         forwarder_override,
         dind_override,
         rebuild,
@@ -440,6 +466,7 @@ fn ensure_shared_dind_volume(name: &str) -> Result<(), String> {
 
 fn shared_services_command(
     sandbox_dir: &Path,
+    proxy_override: &Path,
     forwarder_override: Option<&Path>,
     dind_override: Option<&Path>,
     rebuild: bool,
@@ -452,7 +479,9 @@ fn shared_services_command(
         .arg("--project-name")
         .arg("ai-sandbox")
         .arg("-f")
-        .arg("docker-compose.yml");
+        .arg("docker-compose.yml")
+        .arg("-f")
+        .arg(proxy_override);
     if let Some(override_path) = dind_override {
         command
             .arg("-f")
@@ -480,6 +509,27 @@ fn shared_services_command(
     if forwarder_override.is_some() {
         command.arg("host-dind-forwarder");
     }
+    command
+}
+
+fn proxy_reload_command(sandbox_dir: &Path, proxy_override: &Path) -> Command {
+    let mut command = Command::new("docker");
+    command.env("COMPOSE_IGNORE_ORPHANS", "true");
+    command
+        .current_dir(sandbox_dir)
+        .arg("compose")
+        .arg("--project-name")
+        .arg("ai-sandbox")
+        .arg("-f")
+        .arg("docker-compose.yml")
+        .arg("-f")
+        .arg(proxy_override)
+        .arg("up")
+        .arg("-d")
+        .arg("--wait")
+        .arg("--force-recreate")
+        .arg("--no-deps")
+        .arg("proxy");
     command
 }
 
@@ -713,23 +763,43 @@ mod tests {
 
     #[test]
     fn rebuild_flag_is_forwarded_to_shared_services() {
-        let rebuild_args = shared_services_command(Path::new("/sandbox"), None, None, true)
-            .get_args()
-            .map(|argument| argument.to_string_lossy().into_owned())
-            .collect::<Vec<_>>();
-        let reuse_args = shared_services_command(Path::new("/sandbox"), None, None, false)
+        let proxy_override = Path::new("/tmp/proxy.yml");
+        let rebuild_args =
+            shared_services_command(Path::new("/sandbox"), proxy_override, None, None, true)
+                .get_args()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+        let reuse_args =
+            shared_services_command(Path::new("/sandbox"), proxy_override, None, None, false)
+                .get_args()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+
+        assert!(rebuild_args.iter().any(|argument| argument == "--build"));
+        assert!(!reuse_args.iter().any(|argument| argument == "--build"));
+        assert!(rebuild_args
+            .windows(2)
+            .any(|args| args == ["-f", "/tmp/proxy.yml"]));
+    }
+
+    #[test]
+    fn squid_reload_recreates_only_the_proxy() {
+        let args = proxy_reload_command(Path::new("/sandbox"), Path::new("/tmp/proxy.yml"))
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
 
-        assert!(rebuild_args.iter().any(|argument| argument == "--build"));
-        assert!(!reuse_args.iter().any(|argument| argument == "--build"));
+        assert!(args.windows(2).any(|args| args == ["-f", "/tmp/proxy.yml"]));
+        assert!(args.iter().any(|argument| argument == "--force-recreate"));
+        assert!(args.iter().any(|argument| argument == "--no-deps"));
+        assert_eq!(args.last().map(String::as_str), Some("proxy"));
     }
 
     #[test]
     fn shared_forwarder_uses_generated_override_and_ports_profile() {
         let args = shared_services_command(
             Path::new("/sandbox"),
+            Path::new("/tmp/proxy.yml"),
             Some(Path::new("/tmp/forwarder.yml")),
             None,
             false,
@@ -751,6 +821,7 @@ mod tests {
     fn shared_dind_uses_generated_mounts_and_docker_profile() {
         let args = shared_services_command(
             Path::new("/sandbox"),
+            Path::new("/tmp/proxy.yml"),
             None,
             Some(Path::new("/tmp/shared-dind.yml")),
             false,

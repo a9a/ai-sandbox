@@ -66,6 +66,55 @@ pub(crate) fn write_shared_dind_override(
     Ok(output_path)
 }
 
+pub(crate) fn write_proxy_override(
+    output_dir: &Path,
+    built_in_allowlist_path: &Path,
+    user_allowlist_path: &Path,
+) -> Result<PathBuf, String> {
+    fs::create_dir_all(output_dir).map_err(|error| error.to_string())?;
+
+    let built_in_allowlist = fs::read_to_string(built_in_allowlist_path)
+        .map_err(|error| format!("cannot read {}: {error}", built_in_allowlist_path.display()))?;
+    let user_allowlist = match fs::read_to_string(user_allowlist_path) {
+        Ok(contents) => Some(contents),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(format!(
+                "cannot read {}: {error}",
+                user_allowlist_path.display()
+            ))
+        }
+    };
+    let combined_allowlist = combine_allowlists(&built_in_allowlist, user_allowlist.as_deref());
+    let combined_allowlist_path = output_dir.join("allowed-domains.txt");
+    fs::write(&combined_allowlist_path, &combined_allowlist).map_err(|error| error.to_string())?;
+
+    let output_path = output_dir.join("proxy-allowlist.yml");
+    let contents = render_proxy_override(&combined_allowlist_path, &combined_allowlist);
+    fs::write(&output_path, contents).map_err(|error| error.to_string())?;
+    Ok(output_path)
+}
+
+fn combine_allowlists(built_in: &str, user: Option<&str>) -> String {
+    let mut combined = built_in.trim_end().to_string();
+    if let Some(user) = user.map(str::trim).filter(|user| !user.is_empty()) {
+        if !combined.is_empty() {
+            combined.push('\n');
+        }
+        combined.push_str(user);
+    }
+    combined.push('\n');
+    combined
+}
+
+fn render_proxy_override(combined_allowlist_path: &Path, combined_allowlist: &str) -> String {
+    let config_hash = stable_hash(combined_allowlist);
+    format!(
+        "services:\n  proxy:\n    labels:\n      ai-sandbox.allowlist-config: \"{config_hash:016x}\"\n    volumes:\n      - type: bind\n        source: {}\n        target: /etc/squid/allowed-domains.txt\n        read_only: true\n",
+        yaml_path(combined_allowlist_path)
+    )
+}
+
 fn render_shared_dind_override(workspaces: &[Workspace]) -> String {
     let mut mounts = String::new();
     for workspace in workspaces {
@@ -362,6 +411,27 @@ mod tests {
 
         assert!(!contents.contains("    volumes:\n"));
         assert!(contents.contains("ai-sandbox.mount-config:"));
+    }
+
+    #[test]
+    fn proxy_override_mounts_the_combined_allowlist() {
+        let contents = render_proxy_override(
+            Path::new("/cache/ai-sandbox/generated/allowed-domains.txt"),
+            ".github.com\n.example.com\n",
+        );
+
+        assert!(contents.contains("ai-sandbox.allowlist-config:"));
+        assert!(contents.contains("source: \"/cache/ai-sandbox/generated/allowed-domains.txt\""));
+        assert!(contents.contains("target: /etc/squid/allowed-domains.txt"));
+        assert!(contents.contains("read_only: true"));
+    }
+
+    #[test]
+    fn user_allowlist_extends_the_built_in_domains() {
+        let combined = combine_allowlists(".github.com\n", Some("\n.example.com\n"));
+
+        assert_eq!(combined, ".github.com\n.example.com\n");
+        assert_eq!(combine_allowlists(".github.com\n", None), ".github.com\n");
     }
 
     #[test]
