@@ -151,6 +151,8 @@ For workspaces with `docker_ports`, the launcher sets `SANDBOX_DOCKER_PORT_RANGE
 
 The generated agent container runs an idle keepalive process. Every interactive Claude/Codex session is started through the matching entrypoint so secrets are loaded from Docker secret files for that session.
 
+Codex sessions disable the CLI's nested Bubblewrap sandbox and approval prompts because the agent already runs inside the repository's Docker sandbox. This avoids requiring unprivileged user namespaces inside the agent container; filesystem mounts, network access, and Docker access remain constrained by the outer Compose stack.
+
 `box.toml` is required, but it does not need to contain configured workspaces. The automatic current-directory workspace does not publish DinD ports; add a named workspace with `docker_ports` when host access to inner services is needed.
 
 ## Runtime Assets

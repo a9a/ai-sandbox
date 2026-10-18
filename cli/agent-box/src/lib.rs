@@ -36,6 +36,13 @@ impl Agent {
         }
     }
 
+    fn command_args(self) -> &'static [&'static str] {
+        match self {
+            Agent::Claude => &[],
+            Agent::Codex => &["--dangerously-bypass-approvals-and-sandbox"],
+        }
+    }
+
     fn service(self) -> &'static str {
         match self {
             Agent::Claude => "claude-agent",
@@ -630,7 +637,8 @@ fn exec_agent(
     command
         .arg(agent.service())
         .arg(agent.entrypoint())
-        .arg(agent.command());
+        .arg(agent.command())
+        .args(agent.command_args());
     set_agent_home_env(agent, defaults, &mut command);
     set_runtime_env(agent, project_name, &mut command);
     run_command(command)
@@ -691,6 +699,15 @@ mod tests {
         assert_eq!(
             Agent::Codex.compose_files(true),
             vec!["docker-compose.yml", "docker-compose.docker.yml"]
+        );
+    }
+
+    #[test]
+    fn codex_uses_the_outer_container_sandbox() {
+        assert!(Agent::Claude.command_args().is_empty());
+        assert_eq!(
+            Agent::Codex.command_args(),
+            &["--dangerously-bypass-approvals-and-sandbox"]
         );
     }
 
