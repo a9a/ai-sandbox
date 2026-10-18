@@ -5,7 +5,7 @@ Deterministic Docker sandbox for AI coding agents with controlled egress through
 ## Files
 
 - `docker-compose.yml` - shared proxy, networks, secrets, and Claude/Codex services.
-- `docker-compose.docker.yml` - rootless Docker sidecar overlay for both agents.
+- `docker-compose.docker.yml` - shared rootless Docker daemon and agent tooling overlay.
 - `Dockerfile.agent` - shared Dockerfile with targets: `claude`, `claude-docker`, `codex`, `codex-docker`.
 - `cli/agent-box` - standalone Claude/Codex workspace launcher.
 - `justfile` - development tasks for image builds, tests, and cleanup.
@@ -130,13 +130,22 @@ claude-box
 codex-box
 ```
 
-The selected host directories are mounted under `/home/devops/project/<workspace-name>/<mount-name>`. The same paths are mounted in that workspace's DinD daemon so inner bind mounts resolve correctly. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. Docker support is enabled by default; pass `--no-docker` for the non-Docker stack or `--build` to rebuild images before opening the agent.
+The selected host directories are mounted under `/home/devops/project/<workspace-name>/<mount-name>`. All configured workspace mounts are also attached at the same paths to one shared DinD daemon so inner bind mounts resolve correctly. Type to fuzzy-search, use arrow keys to refine the selection, and press Enter. Docker support is enabled by default; pass `--no-docker` for the non-Docker stack or `--build` to rebuild images before opening the agent.
 
 Launcher agent homes are isolated by default under `~/.ai-sandbox/claude` and `~/.ai-sandbox/codex`; the launcher creates them with mode `0700`. To explicitly share existing host configuration, set `claude_home` or `codex_home` in `[defaults]`, or export `CLAUDE_HOME_PATH` / `CODEX_HOME_PATH`.
 
-Launcher runtimes are scoped by workspace. Each workspace gets persistent agent containers and, when Docker is enabled, its own rootless Docker daemon and Docker data volumes. Reopening the same workspace starts another `exec` session in the existing agent container; opening a different workspace leaves previous containers and sessions running. All workspace runtimes share the single `ai-sandbox-proxy` service, its egress policy, and one `host-dind-forwarder` for host-bound Docker ports.
+Launcher agent runtimes are scoped by workspace. Reopening the same workspace starts another `exec` session in the existing agent container; opening a different workspace leaves previous containers and sessions running. All Docker-enabled agents use one shared rootless `ai-sandbox-docker-daemon`, Docker cache, Unix socket, `ai-sandbox-proxy`, and `host-dind-forwarder`. Consequently, Docker-enabled agents can inspect and modify each other's inner containers, images, networks, and volumes.
 
-Optional `docker_ports` publishes the same port range through the shared `host-dind-forwarder` to host loopback. The forwarder is the only component connected to its non-internal ingress network; agents and DinD daemons remain on internal networks. Ranges must use unprivileged ports and cannot overlap between workspaces. For example, `docker_ports = "18000-18099"` makes an inner `docker run -p 18080:80 ...` service available at `http://localhost:18080` without exposing it beyond the host.
+Existing per-workspace DinD containers and volumes from older launcher versions are not migrated into the shared daemon automatically. They can be removed after any required data has been copied or rebuilt.
+
+When `Current directory` is outside configured mounts, the launcher offers two Docker modes:
+
+- use shared Docker immediately without project bind mounts,
+- persist the current directory as a DinD mount and recreate the shared daemon.
+
+The first mode supports image pulls, ordinary containers, named volumes, `docker build .`, and Compose projects without host bind mounts. The second mode is required for `docker run -v "$PWD:/app"` and Compose entries such as `.:/app`. Added current-directory mounts are retained in the launcher state, so later sessions reuse them without another restart. If the current directory is already inside a configured mount, full bind-mount support is enabled automatically.
+
+Optional `docker_ports` publishes the same port range through the shared `host-dind-forwarder` to host loopback. The forwarder is the only component connected to its non-internal ingress network; agents and the shared DinD daemon remain on the internal network. Ranges must use unprivileged ports and cannot overlap between workspaces. For example, `docker_ports = "18000-18099"` makes an inner `docker run -p 18080:80 ...` service available at `http://localhost:18080` without exposing it beyond the host.
 
 For workspaces with `docker_ports`, the launcher sets `SANDBOX_DOCKER_PORT_RANGE` in the agent and adds bundled port guidance to the agent's global instruction file. Existing `AGENTS.md` or `CLAUDE.md` content from the selected agent home is preserved in the generated file, and the source file is not modified. The generated instruction applies to every mounted project opened in that workspace runtime. Repository developers can change `instructions/docker-ports.md` and rebuild the launcher to update this embedded guidance.
 
@@ -151,9 +160,9 @@ Compose files, Dockerfiles, proxy configuration, entrypoints, and agent instruct
 - Linux: `${XDG_CACHE_HOME:-$HOME/.cache}/ai-sandbox/runtime/`
 - macOS: `$HOME/Library/Caches/ai-sandbox/runtime/`
 
-Generated Compose overrides and instruction files are stored under the adjacent `ai-sandbox/generated/` directory. Set `AI_SANDBOX_DIR` only during launcher development to use runtime assets from a repository checkout instead of the embedded copy.
+Generated Compose overrides, instruction files, and the retained list of dynamic DinD mounts are stored under the adjacent `ai-sandbox/generated/` directory. Set `AI_SANDBOX_DIR` only during launcher development to use runtime assets from a repository checkout instead of the embedded copy.
 
-Docker-enabled Claude/Codex profiles use a rootless Docker daemon sidecar and Unix socket communication (`DOCKER_HOST=unix:///run/user/1000/docker.sock`). Both images install `docker`, `docker compose`, and `helm` from the shared tooling stage in `Dockerfile.agent`. Services published by inner Docker containers are reachable from the agent at `http://docker-daemon:<port>` and, for configured `docker_ports`, from host loopback through `host-dind-forwarder`.
+Docker-enabled Claude/Codex profiles use one shared rootless Docker daemon and Unix socket (`DOCKER_HOST=unix:///run/user/1000/docker.sock`). Both images install `docker`, `docker compose`, and `helm` from the shared tooling stage in `Dockerfile.agent`. The launcher assigns a workspace-and-mount-specific `COMPOSE_PROJECT_NAME` to interactive sessions to avoid inner Compose collisions. Services published by inner Docker containers are reachable from an agent at `http://docker-daemon:<port>` and, for configured `docker_ports`, from host loopback through `host-dind-forwarder`.
 
 `just` and `make` are development-only helpers:
 

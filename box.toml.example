@@ -8,6 +8,7 @@ docker = true
 
 # The launch directory is always added automatically as the final workspace.
 # Define named workspaces when you need multiple mounts or host Docker ports.
+# All named workspace mounts are attached to the shared Docker daemon.
 
 [[workspaces]]
 name = "workspace-a"

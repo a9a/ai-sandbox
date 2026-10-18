@@ -1,6 +1,6 @@
 set dotenv-load := true
 
-compose_all := "docker compose -f docker-compose.yml -f docker-compose.docker.yml --profile claude --profile codex --profile ports"
+compose_all := "docker compose -f docker-compose.yml -f docker-compose.docker.yml --profile claude --profile codex --profile docker --profile ports"
 
 default:
     @just --list

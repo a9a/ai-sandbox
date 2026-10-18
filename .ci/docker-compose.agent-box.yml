@@ -1,16 +1,15 @@
 services:
   claude-agent:
-    depends_on: !override
-      docker-daemon:
-        condition: service_healthy
+    depends_on: !reset {}
   codex-agent:
-    depends_on: !override
-      docker-daemon:
-        condition: service_healthy
+    depends_on: !reset {}
   docker-daemon:
-    depends_on: !override
-      docker-daemon-init:
-        condition: service_completed_successfully
+    labels:
+      ai-sandbox.mount-config: "ci"
+    volumes:
+      - type: bind
+        source: ${PWD}
+        target: /home/devops/project/ci/repository
 
 networks:
   agent_net: !override

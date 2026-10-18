@@ -4,8 +4,8 @@
 
 This repository defines a Docker sandbox for AI coding agents. Top-level
 Compose files define the stacks: `docker-compose.yml` contains the proxy and
-Claude/Codex services, while `docker-compose.docker.yml` enables the Docker
-sidecar profile.
+Claude/Codex services, while `docker-compose.docker.yml` defines the shared
+rootless Docker daemon and Docker-enabled agent overlays.
 Agent images are built from the targets in `Dockerfile.agent`. Proxy policy lives in
 `proxy/`, operational scripts live in `scripts/`, and CI definitions live in
 `.github/workflows/`. Integration test fixtures are under `.ci/`.

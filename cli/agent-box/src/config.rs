@@ -36,6 +36,7 @@ impl fmt::Display for PortRange {
 pub(crate) struct Mount {
     pub(crate) name: String,
     pub(crate) host: PathBuf,
+    pub(crate) container_path: Option<String>,
 }
 
 pub(crate) struct Defaults {
@@ -117,6 +118,7 @@ fn parse_config(config_path: &Path, contents: &str) -> Result<Config, String> {
                 current_mount = Some(Mount {
                     name: String::new(),
                     host: PathBuf::new(),
+                    container_path: None,
                 });
                 section = Section::Mount;
                 continue;

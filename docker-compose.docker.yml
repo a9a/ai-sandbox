@@ -1,6 +1,6 @@
 services:
   docker-daemon-init:
-    profiles: ["claude", "codex"]
+    profiles: ["docker"]
     image: alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
     command:
       - sh
@@ -9,11 +9,12 @@ services:
     networks:
       - agent_net
     volumes:
-      - agent_dind_sock:/run/user/1000
+      - shared_dind_sock:/run/user/1000
     restart: "no"
 
   docker-daemon:
-    profiles: ["claude", "codex"]
+    profiles: ["docker"]
+    container_name: ai-sandbox-docker-daemon
     image: ${DOCKER_DIND_IMAGE:-docker:28-dind-rootless@sha256:7c3e797187e43738220462658f4586572cbd3bf009f728b21e34d9c5c06ce431}
     privileged: true
     security_opt:
@@ -48,8 +49,8 @@ services:
     networks:
       - agent_net
     volumes:
-      - agent_dind_data:/home/rootless/.local/share/docker
-      - agent_dind_sock:/run/user/1000
+      - shared_dind_data:/home/rootless/.local/share/docker
+      - shared_dind_sock:/run/user/1000
     restart: unless-stopped
 
   claude-agent:
@@ -59,13 +60,11 @@ services:
         DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
         HELM_VERSION: ${HELM_VERSION:-v3.18.4}
     image: ${CLAUDE_DOCKER_IMAGE_NAME:-ai-sandbox-claude-agent-docker:local}
-    depends_on:
-      docker-daemon:
-        condition: service_healthy
     environment:
       DOCKER_HOST: unix:///run/user/1000/docker.sock
+      NO_PROXY: localhost,127.0.0.1,proxy,docker-daemon
     volumes:
-      - agent_dind_sock:/run/user/1000
+      - shared_dind_sock:/run/user/1000
 
   codex-agent:
     build:
@@ -74,16 +73,16 @@ services:
         DOCKER_CLI_IMAGE: ${DOCKER_CLI_IMAGE:-docker:27-cli}
         HELM_VERSION: ${HELM_VERSION:-v3.18.4}
     image: ${CODEX_DOCKER_IMAGE_NAME:-ai-sandbox-codex-agent-docker:local}
-    depends_on:
-      docker-daemon:
-        condition: service_healthy
     environment:
       DOCKER_HOST: unix:///run/user/1000/docker.sock
+      NO_PROXY: localhost,127.0.0.1,proxy,docker-daemon
     volumes:
-      - agent_dind_sock:/run/user/1000
+      - shared_dind_sock:/run/user/1000
 
 volumes:
-  agent_dind_data:
-    name: ${AGENT_DIND_DATA_VOLUME:-ai-sandbox-agent-dind-data}
-  agent_dind_sock:
-    name: ${AGENT_DIND_SOCK_VOLUME:-ai-sandbox-agent-dind-sock}
+  shared_dind_data:
+    name: ai-sandbox-dind-data
+    external: true
+  shared_dind_sock:
+    name: ai-sandbox-dind-sock
+    external: true

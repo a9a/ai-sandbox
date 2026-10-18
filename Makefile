@@ -1,4 +1,4 @@
-COMPOSE_ALL := docker compose -f docker-compose.yml -f docker-compose.docker.yml --profile claude --profile codex --profile ports
+COMPOSE_ALL := docker compose -f docker-compose.yml -f docker-compose.docker.yml --profile claude --profile codex --profile docker --profile ports
 
 .PHONY: help claude-build codex-build test test-claude test-codex firewall-remove down-all
 

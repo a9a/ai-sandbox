@@ -52,7 +52,7 @@ jobs:
           docker compose -f docker-compose.yml --profile codex config >/dev/null
           docker compose -f docker-compose.yml -f docker-compose.docker.yml --profile claude config >/dev/null
           docker compose -f docker-compose.yml -f docker-compose.docker.yml --profile codex config >/dev/null
-          docker compose -f docker-compose.yml -f docker-compose.docker.yml -f .ci/docker-compose.agent-box.yml --profile claude --profile codex config >/dev/null
+          docker compose -f docker-compose.yml -f docker-compose.docker.yml -f .ci/docker-compose.agent-box.yml --profile claude --profile codex --profile docker config >/dev/null
           docker compose -f docker-compose.yml -f .ci/docker-compose.test.yml config >/dev/null
 
       - name: Build images

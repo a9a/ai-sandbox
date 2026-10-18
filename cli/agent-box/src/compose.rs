@@ -37,12 +37,7 @@ pub(crate) fn write_compose_override(
     };
 
     let mut contents = String::from("services:\n");
-    write_service_mounts(
-        &mut contents,
-        agent.service(),
-        &workspace.name,
-        &workspace.mounts,
-    );
+    write_service_mounts(&mut contents, agent.service(), workspace);
     if let Some(path) = instruction_path.as_deref() {
         write_instruction_mount(&mut contents, agent, path);
     }
@@ -50,35 +45,41 @@ pub(crate) fn write_compose_override(
     if let Some(port_range) = workspace.docker_ports.filter(|_| docker_enabled) {
         write_port_environment(&mut contents, port_range);
     }
-    if docker_enabled {
-        contents.push_str(
-            "    depends_on: !override\n      docker-daemon:\n        condition: service_healthy\n",
-        );
-        write_service_mounts(
-            &mut contents,
-            "docker-daemon",
-            &workspace.name,
-            &workspace.mounts,
-        );
-        if let Some(port_range) = workspace.docker_ports {
-            write_port_environment(&mut contents, port_range);
-            contents.push_str(&format!(
-                "    networks: !override\n      agent_net:\n        aliases:\n          - {}\n",
-                dind_network_alias(workspace)
-            ));
-        }
-        contents.push_str(
-            "    depends_on: !override\n      docker-daemon-init:\n        condition: service_completed_successfully\n",
-        );
-    } else {
-        contents.push_str("    depends_on: !reset {}\n");
-    }
+    contents.push_str("    depends_on: !reset {}\n");
     contents.push_str(
         "networks:\n  agent_net: !override\n    external: true\n    name: ai-sandbox_agent_net\n",
     );
 
     fs::write(&output_path, contents).map_err(|error| error.to_string())?;
     Ok(output_path)
+}
+
+pub(crate) fn write_shared_dind_override(
+    output_dir: &Path,
+    workspaces: &[Workspace],
+) -> Result<PathBuf, String> {
+    fs::create_dir_all(output_dir).map_err(|error| error.to_string())?;
+
+    let output_path = output_dir.join("shared-dind.yml");
+    let contents = render_shared_dind_override(workspaces);
+    fs::write(&output_path, contents).map_err(|error| error.to_string())?;
+    Ok(output_path)
+}
+
+fn render_shared_dind_override(workspaces: &[Workspace]) -> String {
+    let mut mounts = String::new();
+    for workspace in workspaces {
+        write_mounts(&mut mounts, workspace);
+    }
+    let config_hash = stable_hash(&mounts);
+    let mut contents = format!(
+        "services:\n  docker-daemon:\n    labels:\n      ai-sandbox.mount-config: \"{config_hash:016x}\"\n"
+    );
+    if !mounts.is_empty() {
+        contents.push_str("    volumes:\n");
+        contents.push_str(&mounts);
+    }
+    contents
 }
 
 pub(crate) fn write_forwarder_override(
@@ -147,10 +148,6 @@ fn write_instruction_mount(contents: &mut String, agent: Agent, path: &Path) {
     ));
 }
 
-fn dind_network_alias(workspace: &Workspace) -> String {
-    format!("dind-{}", workspace_runtime_name(workspace))
-}
-
 fn workspace_runtime_name(workspace: &Workspace) -> String {
     sanitize_name(workspace.runtime_name.as_deref().unwrap_or(&workspace.name)).to_ascii_lowercase()
 }
@@ -167,11 +164,10 @@ fn render_haproxy_config(workspaces: &[(&Workspace, PortRange)]) -> String {
     );
 
     for (workspace, port_range) in workspaces {
-        let alias = dind_network_alias(workspace);
         let listener_name = sanitize_name(&workspace.name).to_ascii_lowercase();
         for port in port_range.start..=port_range.end {
             contents.push_str(&format!(
-                "\nlisten {listener_name}-{port}\n    bind :{port}\n    server dind {alias}:{port} resolvers docker init-addr libc,none\n"
+                "\nlisten {listener_name}-{port}\n    bind :{port}\n    server dind docker-daemon:{port} resolvers docker init-addr libc,none\n"
             ));
         }
     }
@@ -232,21 +228,27 @@ fn combined_runtime_instructions(existing: &str, template: &str, port_range: Por
     contents
 }
 
-fn write_service_mounts(
-    contents: &mut String,
-    service: &str,
-    workspace_name: &str,
-    mounts: &[Mount],
-) {
+fn write_service_mounts(contents: &mut String, service: &str, workspace: &Workspace) {
     contents.push_str(&format!("  {service}:\n"));
     contents.push_str("    volumes:\n");
-    for mount in mounts {
+    write_mounts(contents, workspace);
+}
+
+fn write_mounts(contents: &mut String, workspace: &Workspace) {
+    for mount in &workspace.mounts {
         contents.push_str(&format!(
             "      - type: bind\n        source: {}\n        target: {}\n",
             yaml_path(&mount.host),
-            container_context(workspace_name, &mount.name)
+            workspace_container_context(workspace, mount)
         ));
     }
+}
+
+pub(crate) fn workspace_container_context(workspace: &Workspace, mount: &Mount) -> String {
+    mount
+        .container_path
+        .clone()
+        .unwrap_or_else(|| container_context(&workspace_runtime_name(workspace), &mount.name))
 }
 
 fn yaml_path(path: &Path) -> String {
@@ -298,7 +300,17 @@ mod tests {
             runtime_project_name(&workspace, true),
             "agent-box-current-deadbeef-docker"
         );
-        assert_eq!(dind_network_alias(&workspace), "dind-current-deadbeef");
+        assert_eq!(
+            workspace_container_context(
+                &workspace,
+                &Mount {
+                    name: "api".to_string(),
+                    host: PathBuf::from("/host/api"),
+                    container_path: None,
+                }
+            ),
+            "/home/devops/project/current-deadbeef/api"
+        );
     }
 
     #[test]
@@ -306,15 +318,50 @@ mod tests {
         let mounts = vec![Mount {
             name: "api".to_string(),
             host: PathBuf::from("/host/workspace/api"),
+            container_path: None,
         }];
         let mut agent = String::new();
-        let mut daemon = String::new();
+        let mut workspace = workspace("Platform");
+        workspace.mounts = mounts;
 
-        write_service_mounts(&mut agent, "codex-agent", "Platform", &mounts);
-        write_service_mounts(&mut daemon, "docker-daemon", "Platform", &mounts);
+        write_service_mounts(&mut agent, "codex-agent", &workspace);
+        let mut daemon = String::new();
+        write_mounts(&mut daemon, &workspace);
 
         assert!(agent.contains("target: /home/devops/project/platform/api"));
         assert!(daemon.contains("target: /home/devops/project/platform/api"));
+    }
+
+    #[test]
+    fn shared_dind_override_contains_all_workspace_mounts() {
+        let mut platform = workspace("Platform");
+        platform.mounts.push(Mount {
+            name: "api".to_string(),
+            host: PathBuf::from("/host/platform/api"),
+            container_path: None,
+        });
+        let mut website = workspace("Website");
+        website.mounts.push(Mount {
+            name: "web".to_string(),
+            host: PathBuf::from("/host/website/web"),
+            container_path: None,
+        });
+
+        let contents = render_shared_dind_override(&[platform, website]);
+
+        assert!(contents.contains("source: \"/host/platform/api\""));
+        assert!(contents.contains("target: /home/devops/project/platform/api"));
+        assert!(contents.contains("source: \"/host/website/web\""));
+        assert!(contents.contains("target: /home/devops/project/website/web"));
+        assert!(contents.contains("ai-sandbox.mount-config:"));
+    }
+
+    #[test]
+    fn shared_dind_override_without_projects_keeps_base_volumes() {
+        let contents = render_shared_dind_override(&[]);
+
+        assert!(!contents.contains("    volumes:\n"));
+        assert!(contents.contains("ai-sandbox.mount-config:"));
     }
 
     #[test]
@@ -346,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn haproxy_forwards_each_port_to_workspace_dind_alias() {
+    fn haproxy_forwards_each_port_to_shared_dind() {
         let mut workspace = workspace("Platform API");
         let port_range = PortRange {
             start: 18000,
@@ -357,9 +404,9 @@ mod tests {
         let contents = render_haproxy_config(&[(&workspace, port_range)]);
 
         assert!(contents.contains("listen platform-api-18000"));
-        assert!(contents.contains("server dind dind-platform-api:18000"));
+        assert!(contents.contains("server dind docker-daemon:18000"));
         assert!(contents.contains("listen platform-api-18001"));
-        assert!(contents.contains("server dind dind-platform-api:18001"));
+        assert!(contents.contains("server dind docker-daemon:18001"));
     }
 
     #[test]

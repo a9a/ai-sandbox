@@ -3,12 +3,15 @@ mod config;
 mod runtime;
 
 use compose::{
-    container_context, runtime_project_name, write_compose_override, write_forwarder_override,
+    runtime_project_name, workspace_container_context, write_compose_override,
+    write_forwarder_override, write_shared_dind_override,
 };
 use config::{load_config, Defaults, Mount, Workspace};
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
+use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -18,6 +21,11 @@ use std::process::{Command, Stdio};
 pub enum Agent {
     Claude,
     Codex,
+}
+
+struct SessionContext {
+    workdir: String,
+    inner_project_name: String,
 }
 
 impl Agent {
@@ -112,15 +120,38 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         .map_err(|error| format!("cannot resolve current directory: {error}"))?;
     let runtime_paths = runtime::prepare()?;
     let mut config = load_config()?;
-    config
-        .workspaces
-        .push(current_directory_workspace(&launch_dir));
+    let configured_workspaces = config.workspaces.clone();
+    let mut dynamic_mounts = load_dynamic_dind_mounts(&runtime_paths.generated)?;
+    let dynamic_workspaces = dynamic_dind_workspaces(&dynamic_mounts);
+    let current_target = configured_container_target(&configured_workspaces, &launch_dir)
+        .or_else(|| configured_container_target(&dynamic_workspaces, &launch_dir));
+    config.workspaces.push(current_directory_workspace(
+        &launch_dir,
+        current_target.clone(),
+    ));
     ensure_agent_home(agent, &config.defaults)?;
     let docker_enabled = config.defaults.docker && !cli_no_docker;
-    let workspace = choose_workspace(&config.workspaces)?;
-    let mount = choose_mount(workspace)?;
-    let project_name = runtime_project_name(workspace, docker_enabled);
-    let workdir = container_context(&workspace.name, &mount.name);
+    let workspace = choose_workspace(&config.workspaces)?.clone();
+    let mount = choose_mount(&workspace)?.clone();
+    let current_selected = workspace.runtime_name.is_some();
+    if docker_enabled && current_selected && current_target.is_none() {
+        if choose_current_directory_docker_mount()? {
+            dynamic_mounts.insert(launch_dir.clone());
+            save_dynamic_dind_mounts(&runtime_paths.generated, &dynamic_mounts)?;
+            println!(
+                "Shared Docker will restart to mount {}",
+                launch_dir.display()
+            );
+        } else {
+            println!("Shared Docker enabled without project bind mounts");
+        }
+    }
+
+    let project_name = runtime_project_name(&workspace, docker_enabled);
+    let session = SessionContext {
+        workdir: workspace_container_context(&workspace, &mount),
+        inner_project_name: inner_compose_project_name(&workspace, &mount),
+    };
     if let Some(port_range) = workspace.docker_ports.filter(|_| docker_enabled) {
         println!(
             "Docker ports published to host for '{}': {}",
@@ -132,15 +163,32 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         &runtime_paths.assets,
         &runtime_paths.generated,
         &config.defaults,
-        workspace,
+        &workspace,
         docker_enabled,
     )?;
     let forwarder_override =
         write_forwarder_override(&runtime_paths.generated, &config.workspaces)?;
+    let dind_override = if docker_enabled {
+        let mut dind_workspaces = configured_workspaces;
+        let dynamic_workspaces = dynamic_dind_workspaces(&dynamic_mounts)
+            .into_iter()
+            .filter(|workspace| {
+                configured_container_target(&dind_workspaces, &workspace.mounts[0].host).is_none()
+            })
+            .collect::<Vec<_>>();
+        dind_workspaces.extend(dynamic_workspaces);
+        Some(write_shared_dind_override(
+            &runtime_paths.generated,
+            &dind_workspaces,
+        )?)
+    } else {
+        None
+    };
 
     start_shared_services(
         &runtime_paths.assets,
         forwarder_override.as_deref(),
+        dind_override.as_deref(),
         rebuild,
     )?;
     start_stack(
@@ -158,7 +206,7 @@ fn run_inner(agent: Agent) -> Result<(), String> {
         &override_path,
         &config.defaults,
         &project_name,
-        &workdir,
+        &session,
         docker_enabled,
     )
 }
@@ -169,6 +217,8 @@ fn print_help(agent: Agent) {
     println!("Reads workspace definitions from ~/.config/ai-sandbox/box.toml by default.");
     println!("The current directory is always available as the last workspace option.");
     println!("Runtime Compose and build assets are embedded in the executable.");
+    println!("Docker-enabled sessions share one rootless Docker daemon.");
+    println!("Unregistered current directories can use Docker with or without bind mounts.");
     println!("By default, starts existing images with docker compose up -d.");
     println!("Pass --build to rebuild images before opening the agent.");
     println!("Set AI_SANDBOX_DIR only to use runtime assets from a development checkout.");
@@ -181,7 +231,7 @@ fn agent_box_name(agent: Agent) -> &'static str {
     }
 }
 
-fn current_directory_workspace(path: &Path) -> Workspace {
+fn current_directory_workspace(path: &Path, container_path: Option<String>) -> Workspace {
     let mount_name = path
         .file_name()
         .filter(|name| !name.is_empty())
@@ -192,6 +242,7 @@ fn current_directory_workspace(path: &Path) -> Workspace {
         mounts: vec![Mount {
             name: mount_name,
             host: path.to_path_buf(),
+            container_path,
         }],
         docker_ports: None,
         display_name: Some("Current directory".to_string()),
@@ -206,6 +257,86 @@ fn stable_path_hash(path: &Path) -> u64 {
         .fold(0xcbf29ce484222325, |hash, byte| {
             (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
         })
+}
+
+fn configured_container_target(workspaces: &[Workspace], path: &Path) -> Option<String> {
+    let path = path.canonicalize().ok()?;
+    for workspace in workspaces {
+        for mount in &workspace.mounts {
+            let Ok(host) = mount.host.canonicalize() else {
+                continue;
+            };
+            let Ok(relative) = path.strip_prefix(&host) else {
+                continue;
+            };
+            let target =
+                PathBuf::from(workspace_container_context(workspace, mount)).join(relative);
+            return Some(target.to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+fn dynamic_dind_mounts_path(output_dir: &Path) -> PathBuf {
+    output_dir.join("shared-dind-mounts.txt")
+}
+
+fn dynamic_dind_workspaces(mounts: &BTreeSet<PathBuf>) -> Vec<Workspace> {
+    mounts
+        .iter()
+        .map(|path| current_directory_workspace(path, None))
+        .collect()
+}
+
+fn load_dynamic_dind_mounts(output_dir: &Path) -> Result<BTreeSet<PathBuf>, String> {
+    let path = dynamic_dind_mounts_path(output_dir);
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(BTreeSet::new()),
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
+    Ok(contents
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| PathBuf::from(line).canonicalize().ok())
+        .collect())
+}
+
+fn save_dynamic_dind_mounts(output_dir: &Path, mounts: &BTreeSet<PathBuf>) -> Result<(), String> {
+    if mounts
+        .iter()
+        .any(|path| path.to_string_lossy().contains('\n'))
+    {
+        return Err("Docker mount paths cannot contain newlines".to_string());
+    }
+    let mut contents = mounts
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !contents.is_empty() {
+        contents.push('\n');
+    }
+    let path = dynamic_dind_mounts_path(output_dir);
+    fs::write(&path, contents).map_err(|error| format!("cannot write {}: {error}", path.display()))
+}
+
+fn choose_current_directory_docker_mount() -> Result<bool, String> {
+    let options = vec![
+        "Use shared Docker without project bind mounts".to_string(),
+        "Mount current directory and restart shared Docker".to_string(),
+    ];
+    Ok(choose_from_menu("Docker access for current directory", &options)? == 1)
+}
+
+fn inner_compose_project_name(workspace: &Workspace, mount: &Mount) -> String {
+    let runtime = sanitize_name(workspace.runtime_name.as_deref().unwrap_or(&workspace.name))
+        .to_ascii_lowercase();
+    let mount_name = sanitize_name(&mount.name).to_ascii_lowercase();
+    format!(
+        "sandbox-{runtime}-{mount_name}-{:08x}",
+        stable_path_hash(&mount.host) as u32
+    )
 }
 
 fn agent_home(agent: Agent, defaults: &Defaults) -> Option<PathBuf> {
@@ -265,24 +396,49 @@ fn sanitize_name(name: &str) -> String {
 fn start_shared_services(
     sandbox_dir: &Path,
     forwarder_override: Option<&Path>,
+    dind_override: Option<&Path>,
     rebuild: bool,
 ) -> Result<(), String> {
     if forwarder_override.is_none() {
         run_command(remove_shared_forwarder_command(sandbox_dir))?;
     }
+    if dind_override.is_some() {
+        ensure_shared_dind_volume("ai-sandbox-dind-data")?;
+        ensure_shared_dind_volume("ai-sandbox-dind-sock")?;
+    }
     run_command(shared_services_command(
         sandbox_dir,
         forwarder_override,
+        dind_override,
         rebuild,
     ))
+}
+
+fn ensure_shared_dind_volume(name: &str) -> Result<(), String> {
+    let status = Command::new("docker")
+        .arg("volume")
+        .arg("create")
+        .arg(name)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
+        .status()
+        .map_err(|error| error.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("cannot create Docker volume '{name}': {status}"))
+    }
 }
 
 fn shared_services_command(
     sandbox_dir: &Path,
     forwarder_override: Option<&Path>,
+    dind_override: Option<&Path>,
     rebuild: bool,
 ) -> Command {
     let mut command = Command::new("docker");
+    command.env("COMPOSE_IGNORE_ORPHANS", "true");
     command
         .current_dir(sandbox_dir)
         .arg("compose")
@@ -290,6 +446,15 @@ fn shared_services_command(
         .arg("ai-sandbox")
         .arg("-f")
         .arg("docker-compose.yml");
+    if let Some(override_path) = dind_override {
+        command
+            .arg("-f")
+            .arg("docker-compose.docker.yml")
+            .arg("-f")
+            .arg(override_path)
+            .arg("--profile")
+            .arg("docker");
+    }
     if let Some(override_path) = forwarder_override {
         command
             .arg("-f")
@@ -302,6 +467,9 @@ fn shared_services_command(
         command.arg("--build");
     }
     command.arg("proxy");
+    if dind_override.is_some() {
+        command.arg("docker-daemon");
+    }
     if forwarder_override.is_some() {
         command.arg("host-dind-forwarder");
     }
@@ -310,6 +478,7 @@ fn shared_services_command(
 
 fn remove_shared_forwarder_command(sandbox_dir: &Path) -> Command {
     let mut command = Command::new("docker");
+    command.env("COMPOSE_IGNORE_ORPHANS", "true");
     command
         .current_dir(sandbox_dir)
         .arg("compose")
@@ -423,7 +592,7 @@ fn start_stack(
     }
     command.arg(agent.service());
     set_agent_home_env(agent, defaults, &mut command);
-    set_runtime_env(agent, project_name, docker_enabled, &mut command);
+    set_runtime_env(agent, project_name, &mut command);
     run_command(command)
 }
 
@@ -433,7 +602,7 @@ fn exec_agent(
     override_path: &Path,
     defaults: &Defaults,
     project_name: &str,
-    workdir: &str,
+    session: &SessionContext,
     docker_enabled: bool,
 ) -> Result<(), String> {
     let mut command = Command::new("docker");
@@ -451,12 +620,19 @@ fn exec_agent(
         .arg("-e")
         .arg("HOME=/home/devops")
         .arg("-w")
-        .arg(workdir)
+        .arg(&session.workdir);
+    if docker_enabled {
+        command.arg("-e").arg(format!(
+            "COMPOSE_PROJECT_NAME={}",
+            session.inner_project_name
+        ));
+    }
+    command
         .arg(agent.service())
         .arg(agent.entrypoint())
         .arg(agent.command());
     set_agent_home_env(agent, defaults, &mut command);
-    set_runtime_env(agent, project_name, docker_enabled, &mut command);
+    set_runtime_env(agent, project_name, &mut command);
     run_command(command)
 }
 
@@ -466,23 +642,13 @@ fn set_agent_home_env(agent: Agent, defaults: &Defaults, command: &mut Command) 
     }
 }
 
-fn set_runtime_env(agent: Agent, project_name: &str, docker_enabled: bool, command: &mut Command) {
+fn set_runtime_env(agent: Agent, project_name: &str, command: &mut Command) {
     command.env("COMPOSE_IGNORE_ORPHANS", "true");
     command.env("COMPOSE_PROFILES", agent.command());
     command.env(
         agent.container_name_env(),
         format!("{project_name}-{}", agent.service()),
     );
-    if docker_enabled {
-        command.env(
-            "AGENT_DIND_DATA_VOLUME",
-            format!("{project_name}-dind-data"),
-        );
-        command.env(
-            "AGENT_DIND_SOCK_VOLUME",
-            format!("{project_name}-dind-sock"),
-        );
-    }
 }
 
 fn run_command(mut command: Command) -> Result<(), String> {
@@ -503,6 +669,18 @@ fn run_command(mut command: Command) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_directory(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path =
+            env::temp_dir().join(format!("agent-box-{name}-{}-{unique}", std::process::id()));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
 
     #[test]
     fn compose_files_are_consolidated() {
@@ -518,11 +696,11 @@ mod tests {
 
     #[test]
     fn rebuild_flag_is_forwarded_to_shared_services() {
-        let rebuild_args = shared_services_command(Path::new("/sandbox"), None, true)
+        let rebuild_args = shared_services_command(Path::new("/sandbox"), None, None, true)
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
-        let reuse_args = shared_services_command(Path::new("/sandbox"), None, false)
+        let reuse_args = shared_services_command(Path::new("/sandbox"), None, None, false)
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
@@ -536,6 +714,7 @@ mod tests {
         let args = shared_services_command(
             Path::new("/sandbox"),
             Some(Path::new("/tmp/forwarder.yml")),
+            None,
             false,
         )
         .get_args()
@@ -552,15 +731,108 @@ mod tests {
     }
 
     #[test]
+    fn shared_dind_uses_generated_mounts_and_docker_profile() {
+        let args = shared_services_command(
+            Path::new("/sandbox"),
+            None,
+            Some(Path::new("/tmp/shared-dind.yml")),
+            false,
+        )
+        .get_args()
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["-f", "docker-compose.docker.yml"]));
+        assert!(args
+            .windows(2)
+            .any(|args| args == ["-f", "/tmp/shared-dind.yml"]));
+        assert!(args.windows(2).any(|args| args == ["--profile", "docker"]));
+        assert!(args.iter().any(|argument| argument == "docker-daemon"));
+    }
+
+    #[test]
     fn current_directories_get_distinct_stable_runtimes() {
-        let first = current_directory_workspace(Path::new("/work/team/api"));
-        let repeated = current_directory_workspace(Path::new("/work/team/api"));
-        let second = current_directory_workspace(Path::new("/other/team/api"));
+        let first = current_directory_workspace(Path::new("/work/team/api"), None);
+        let repeated = current_directory_workspace(Path::new("/work/team/api"), None);
+        let second = current_directory_workspace(Path::new("/other/team/api"), None);
 
         assert_eq!(first.runtime_name, repeated.runtime_name);
         assert_ne!(first.runtime_name, second.runtime_name);
         assert_eq!(first.mounts[0].name, "api");
         assert_eq!(first.mounts[0].host, Path::new("/work/team/api"));
         assert_eq!(first.display_name.as_deref(), Some("Current directory"));
+    }
+
+    #[test]
+    fn current_directory_reuses_configured_parent_mount() {
+        let root = temporary_directory("configured-mount");
+        let project = root.join("team/api");
+        fs::create_dir_all(&project).unwrap();
+        let workspace = Workspace {
+            name: "platform".to_string(),
+            mounts: vec![Mount {
+                name: "source".to_string(),
+                host: root.clone(),
+                container_path: None,
+            }],
+            docker_ports: None,
+            display_name: None,
+            runtime_name: None,
+        };
+
+        let target = configured_container_target(&[workspace], &project).unwrap();
+
+        assert_eq!(target, "/home/devops/project/platform/source/team/api");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn dynamic_dind_mounts_are_persisted() {
+        let output_dir = temporary_directory("dynamic-mounts");
+        let project = output_dir.join("project");
+        fs::create_dir_all(&project).unwrap();
+        let mut mounts = BTreeSet::new();
+        mounts.insert(project.canonicalize().unwrap());
+
+        save_dynamic_dind_mounts(&output_dir, &mounts).unwrap();
+        let loaded = load_dynamic_dind_mounts(&output_dir).unwrap();
+
+        assert_eq!(loaded, mounts);
+        fs::remove_dir_all(output_dir).unwrap();
+    }
+
+    #[test]
+    fn current_directory_reuses_dynamic_parent_mount() {
+        let root = temporary_directory("dynamic-parent");
+        let project = root.join("team/api");
+        fs::create_dir_all(&project).unwrap();
+        let mut mounts = BTreeSet::new();
+        mounts.insert(root.canonicalize().unwrap());
+        let workspaces = dynamic_dind_workspaces(&mounts);
+
+        let target = configured_container_target(&workspaces, &project).unwrap();
+        let expected = PathBuf::from(workspace_container_context(
+            &workspaces[0],
+            &workspaces[0].mounts[0],
+        ))
+        .join("team/api")
+        .to_string_lossy()
+        .into_owned();
+
+        assert_eq!(target, expected);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn inner_compose_projects_are_scoped_by_mount_path() {
+        let first = current_directory_workspace(Path::new("/work/team/api"), None);
+        let second = current_directory_workspace(Path::new("/other/team/api"), None);
+
+        assert_ne!(
+            inner_compose_project_name(&first, &first.mounts[0]),
+            inner_compose_project_name(&second, &second.mounts[0])
+        );
     }
 }
