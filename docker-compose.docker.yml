@@ -30,7 +30,7 @@ services:
         condition: service_completed_successfully
     environment:
       DOCKER_TLS_CERTDIR: ""
-      DOCKERD_ROOTLESS_ROOTLESSKIT_NET: vpnkit
+      DOCKERD_ROOTLESS_ROOTLESSKIT_NET: slirp4netns # VPNKit DNS failures, possibly related to moby/moby#47628.
       DOCKERD_ROOTLESS_ROOTLESSKIT_PORT_DRIVER: builtin
       DOCKER_HOST: unix:///run/user/1000/docker.sock
       HTTP_PROXY: http://proxy:3128
