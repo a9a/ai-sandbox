@@ -20,6 +20,11 @@ pub(crate) struct PortRange {
     pub(crate) end: u16,
 }
 
+pub(crate) const CURRENT_DIRECTORY_DOCKER_PORTS: PortRange = PortRange {
+    start: 19000,
+    end: 19099,
+};
+
 impl PortRange {
     fn overlaps(self, other: Self) -> bool {
         self.start <= other.end && other.start <= self.end
@@ -238,6 +243,15 @@ fn validate_config(config_path: &Path, workspaces: &[Workspace]) -> Result<(), S
             }
         }
         if let Some(port_range) = workspace.docker_ports {
+            if port_range.overlaps(CURRENT_DIRECTORY_DOCKER_PORTS) {
+                return Err(format!(
+                    "{}: docker port range for workspace '{}' ({}) overlaps the reserved Current directory range ({})",
+                    config_path.display(),
+                    workspace.name,
+                    port_range,
+                    CURRENT_DIRECTORY_DOCKER_PORTS
+                ));
+            }
             if let Some((existing_name, existing_range)) = workspace_port_ranges
                 .iter()
                 .find(|(_, existing_range)| port_range.overlaps(*existing_range))
@@ -452,6 +466,27 @@ host = "/workspace/api"
         };
 
         assert!(error.contains("ports 1024-65535"));
+    }
+
+    #[test]
+    fn rejects_docker_port_range_reserved_for_current_directory() {
+        let contents = r#"
+[[workspaces]]
+name = "api"
+docker_ports = "18999-19000"
+
+[[workspaces.mounts]]
+name = "api"
+host = "/workspace/api"
+"#;
+
+        let error = match parse_config(Path::new("box.toml"), contents) {
+            Ok(_) => panic!("reserved Current directory ports should be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("workspace 'api' (18999-19000)"));
+        assert!(error.contains("reserved Current directory range (19000-19099)"));
     }
 
     #[test]

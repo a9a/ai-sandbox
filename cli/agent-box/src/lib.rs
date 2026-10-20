@@ -6,7 +6,9 @@ use compose::{
     runtime_project_name, workspace_container_context, write_compose_override,
     write_forwarder_override, write_proxy_override, write_shared_dind_override,
 };
-use config::{load_config, user_allowlist_path, Defaults, Mount, Workspace};
+use config::{
+    load_config, user_allowlist_path, Defaults, Mount, Workspace, CURRENT_DIRECTORY_DOCKER_PORTS,
+};
 use dialoguer::{theme::ColorfulTheme, FuzzySelect};
 use std::collections::BTreeSet;
 use std::env;
@@ -138,12 +140,13 @@ fn run_inner(agent: Agent) -> Result<(), String> {
     let dynamic_workspaces = dynamic_dind_workspaces(&dynamic_mounts);
     let current_target = configured_container_target(&configured_workspaces, &launch_dir)
         .or_else(|| configured_container_target(&dynamic_workspaces, &launch_dir));
+    let docker_enabled = config.defaults.docker && !cli_no_docker;
     config.workspaces.push(current_directory_workspace(
         &launch_dir,
         current_target.clone(),
+        docker_enabled,
     ));
     ensure_agent_home(agent, &config.defaults)?;
-    let docker_enabled = config.defaults.docker && !cli_no_docker;
     let workspace = choose_workspace(&config.workspaces)?.clone();
     let mount = choose_mount(&workspace)?.clone();
     let current_selected = workspace.runtime_name.is_some();
@@ -262,7 +265,11 @@ fn agent_box_name(agent: Agent) -> &'static str {
     }
 }
 
-fn current_directory_workspace(path: &Path, container_path: Option<String>) -> Workspace {
+fn current_directory_workspace(
+    path: &Path,
+    container_path: Option<String>,
+    docker_enabled: bool,
+) -> Workspace {
     let mount_name = path
         .file_name()
         .filter(|name| !name.is_empty())
@@ -275,7 +282,7 @@ fn current_directory_workspace(path: &Path, container_path: Option<String>) -> W
             host: path.to_path_buf(),
             container_path,
         }],
-        docker_ports: None,
+        docker_ports: docker_enabled.then_some(CURRENT_DIRECTORY_DOCKER_PORTS),
         display_name: Some("Current directory".to_string()),
         runtime_name: Some(format!("current-{:016x}", stable_path_hash(path))),
     }
@@ -315,7 +322,7 @@ fn dynamic_dind_mounts_path(output_dir: &Path) -> PathBuf {
 fn dynamic_dind_workspaces(mounts: &BTreeSet<PathBuf>) -> Vec<Workspace> {
     mounts
         .iter()
-        .map(|path| current_directory_workspace(path, None))
+        .map(|path| current_directory_workspace(path, None, false))
         .collect()
 }
 
@@ -842,15 +849,23 @@ mod tests {
 
     #[test]
     fn current_directories_get_distinct_stable_runtimes() {
-        let first = current_directory_workspace(Path::new("/work/team/api"), None);
-        let repeated = current_directory_workspace(Path::new("/work/team/api"), None);
-        let second = current_directory_workspace(Path::new("/other/team/api"), None);
+        let first = current_directory_workspace(Path::new("/work/team/api"), None, true);
+        let repeated = current_directory_workspace(Path::new("/work/team/api"), None, true);
+        let second = current_directory_workspace(Path::new("/other/team/api"), None, true);
 
         assert_eq!(first.runtime_name, repeated.runtime_name);
         assert_ne!(first.runtime_name, second.runtime_name);
         assert_eq!(first.mounts[0].name, "api");
         assert_eq!(first.mounts[0].host, Path::new("/work/team/api"));
         assert_eq!(first.display_name.as_deref(), Some("Current directory"));
+        assert_eq!(first.docker_ports, Some(CURRENT_DIRECTORY_DOCKER_PORTS));
+    }
+
+    #[test]
+    fn current_directory_does_not_publish_ports_without_docker() {
+        let workspace = current_directory_workspace(Path::new("/work/team/api"), None, false);
+
+        assert_eq!(workspace.docker_ports, None);
     }
 
     #[test]
@@ -915,8 +930,8 @@ mod tests {
 
     #[test]
     fn inner_compose_projects_are_scoped_by_mount_path() {
-        let first = current_directory_workspace(Path::new("/work/team/api"), None);
-        let second = current_directory_workspace(Path::new("/other/team/api"), None);
+        let first = current_directory_workspace(Path::new("/work/team/api"), None, true);
+        let second = current_directory_workspace(Path::new("/other/team/api"), None, true);
 
         assert_ne!(
             inner_compose_project_name(&first, &first.mounts[0]),

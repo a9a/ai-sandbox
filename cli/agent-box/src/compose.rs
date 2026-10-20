@@ -205,7 +205,7 @@ fn render_haproxy_config(workspaces: &[(&Workspace, PortRange)]) -> String {
         let listener_name = sanitize_name(&workspace.name).to_ascii_lowercase();
         for port in port_range.start..=port_range.end {
             contents.push_str(&format!(
-                "\nlisten {listener_name}-{port}\n    bind :{port}\n    server dind docker-daemon:{port} resolvers docker init-addr libc,none\n"
+                "\nlisten {listener_name}-{port}\n    bind :{port}\n    server dind ai-sandbox-docker-daemon:{port} resolvers docker init-addr libc,none\n"
             ));
         }
     }
@@ -487,9 +487,9 @@ mod tests {
         let contents = render_haproxy_config(&[(&workspace, port_range)]);
 
         assert!(contents.contains("listen platform-api-18000"));
-        assert!(contents.contains("server dind docker-daemon:18000"));
+        assert!(contents.contains("server dind ai-sandbox-docker-daemon:18000"));
         assert!(contents.contains("listen platform-api-18001"));
-        assert!(contents.contains("server dind docker-daemon:18001"));
+        assert!(contents.contains("server dind ai-sandbox-docker-daemon:18001"));
     }
 
     #[test]

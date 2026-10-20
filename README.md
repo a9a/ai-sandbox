@@ -147,6 +147,8 @@ The first mode supports image pulls, ordinary containers, named volumes, `docker
 
 Optional `docker_ports` publishes the same port range through the shared `host-dind-forwarder` to host loopback. The forwarder is the only component connected to its non-internal ingress network; agents and the shared DinD daemon remain on the internal network. Ranges must use unprivileged ports and cannot overlap between workspaces. For example, `docker_ports = "18000-18099"` makes an inner `docker run -p 18080:80 ...` service available at `http://localhost:18080` without exposing it beyond the host.
 
+Docker-enabled `Current directory` sessions automatically share the reserved range `19000-19099`; it does not need to be declared in `box.toml`. For example, an inner `docker run -p 19082:8082 ...` service is available from the host at `http://localhost:19082`. Configured workspace ranges cannot overlap this reservation. Because all agents use the same DinD daemon, concurrent `Current directory` sessions must use distinct ports within the shared range.
+
 The launcher adds bundled proxy allowlist guidance to every agent's global instruction file. For workspaces with `docker_ports`, it also sets `SANDBOX_DOCKER_PORT_RANGE` and adds port guidance. Existing `AGENTS.md` or `CLAUDE.md` content from the selected agent home is preserved in the generated file, and the source file is not modified. The generated instruction applies to every mounted project opened in that workspace runtime. Repository developers can change templates under `instructions/` and rebuild the launcher to update this embedded guidance.
 
 The generated agent container runs an idle keepalive process. Every interactive Claude/Codex session is started through the matching entrypoint so secrets are loaded from Docker secret files for that session.
@@ -157,7 +159,7 @@ Create `~/.config/ai-sandbox/allowed-domains.txt` to extend the built-in proxy a
 
 Run `codex-box squid-reload` or `claude-box squid-reload` to apply allowlist changes immediately without selecting a workspace or opening an agent session. The command recreates only the shared proxy container.
 
-`box.toml` is required, but it does not need to contain configured workspaces. The automatic current-directory workspace does not publish DinD ports; add a named workspace with `docker_ports` when host access to inner services is needed.
+`box.toml` is required, but it does not need to contain configured workspaces. Docker-enabled automatic current-directory workspaces publish the shared `19000-19099` DinD port range to host loopback.
 
 ## Runtime Assets
 
@@ -168,7 +170,7 @@ Compose files, Dockerfiles, proxy configuration, entrypoints, and agent instruct
 
 Generated Compose overrides, instruction files, and the retained list of dynamic DinD mounts are stored under the adjacent `ai-sandbox/generated/` directory. Set `AI_SANDBOX_DIR` only during launcher development to use runtime assets from a repository checkout instead of the embedded copy.
 
-Docker-enabled Claude/Codex profiles use one shared rootless Docker daemon and Unix socket (`DOCKER_HOST=unix:///run/user/1000/docker.sock`). Both images install `docker`, `docker compose`, and `helm` from the shared tooling stage in `Dockerfile.agent`. The launcher assigns a workspace-and-mount-specific `COMPOSE_PROJECT_NAME` to interactive sessions to avoid inner Compose collisions. Services published by inner Docker containers are reachable from an agent at `http://docker-daemon:<port>` and, for configured `docker_ports`, from host loopback through `host-dind-forwarder`.
+Docker-enabled Claude/Codex profiles use one shared rootless Docker daemon and Unix socket (`DOCKER_HOST=unix:///run/user/1000/docker.sock`). Both images install `docker`, `docker compose`, and `helm` from the shared tooling stage in `Dockerfile.agent`. The launcher assigns a workspace-and-mount-specific `COMPOSE_PROJECT_NAME` to interactive sessions to avoid inner Compose collisions. Services published by inner Docker containers are reachable from an agent at `http://ai-sandbox-docker-daemon:<port>` and, for configured `docker_ports`, from host loopback through `host-dind-forwarder`.
 
 `just` and `make` are development-only helpers:
 
