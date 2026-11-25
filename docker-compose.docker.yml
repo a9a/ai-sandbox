@@ -15,7 +15,7 @@ services:
   docker-daemon:
     profiles: ["docker"]
     container_name: ai-sandbox-docker-daemon
-    image: ${DOCKER_DIND_IMAGE:-docker:28-dind-rootless@sha256:7c3e797187e43738220462658f4586572cbd3bf009f728b21e34d9c5c06ce431}
+    image: ${DOCKER_DIND_IMAGE:-docker:29-dind-rootless@sha256:5a703ad0d72cd5e4fb4beca8024d6eddef6d22a46ed1d9812bf3d24ff43ccbce}
     privileged: true
     security_opt:
       - seccomp=unconfined
